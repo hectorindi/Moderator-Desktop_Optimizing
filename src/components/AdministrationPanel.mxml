@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="312" height="422">
+	
+	<fx:Metadata>
+		[Event(name="onClearChatButtonClicked", type="flash.events.Event")]
+		[Event(name="onListBannedUsersButtonClicked", type="flash.events.Event")]
+		[Event(name="onKickUserButtonClicked", type="flash.events.Event")]
+		[Event(name="onUnBanUserButtonClicked", type="flash.events.Event")]
+		[Event(name="onBanUserButtonClicked", type="events.AdministrationPanelEvent")]
+		[Event(name="onCloseButtonClicked", type="flash.events.Event")]
+		[Event(name="onActiveUserButtonClicked", type="flash.events.Event")]
+		[Event(name="onMakeModeratorButtonClicked", type="flash.events.Event")]
+		[Event(name="onMakePresenterButtonClicked", type="flash.events.Event")]
+		[Event(name="onRemovePresenterButtonClicked", type="flash.events.Event")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.controls.Alert;
+			
+			import spark.components.RichEditableText;
+			
+			import events.AdministrationPanelEvent;
+			
+			private var _userID:Number;
+			
+			
+			public static var ON_BAN_USER_BUTTON_CLICKED:String = "onBanUserButtonClicked";
+			public static var ON_UNBAN_USER_BUTTON_CLICKED:String = "onUnBanUserButtonClicked";
+			public static var ON_KICK_USER_BUTTON_CLICKED:String = "onKickUserButtonClicked";
+			public static var ON_LIST_BANNED_USERS_BUTTON_CLICKED:String = "onListBannedUsersButtonClicked";
+			public static var ON_CLEAR_CHAT_BUTTON_CLICKED:String = "onClearChatButtonClicked";
+			public static var ON_CLOSE_BUTTON_CLICKED:String = "onCloseButtonClicked";
+			public static var ON_MOVE_USER_TO_SHOW:String = "onMoveUserToShow";
+			public static var ON_MOVE_USER_TO_GREEN_ROOM:String = "onMoveUSerToGreenRoom";
+			
+			public static var ON_REMOVE_POPUP:String = "onRemovePopUp";
+			public static var ON_START_PRIVAT_VID_CHAT:String = "onStatPrivateVidChat";
+			
+			protected function clearChatButton_clickHandler(event:MouseEvent):void{
+				var e:Event = new Event(AdministrationPanel.ON_CLEAR_CHAT_BUTTON_CLICKED);
+				dispatchEvent(e);
+				
+				var eve:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve);
+			}
+			
+			protected function listBannedUsersButton_clickHandler(event:MouseEvent):void{
+				var e:Event = new Event(AdministrationPanel.ON_LIST_BANNED_USERS_BUTTON_CLICKED);
+				dispatchEvent(e);
+				
+				var eve:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve);
+			}
+			
+			protected function kickUserButton_clickHandler(event:MouseEvent):void{
+				var e:Event = new Event(AdministrationPanel.ON_KICK_USER_BUTTON_CLICKED);
+				dispatchEvent(e);
+				
+				var eve:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve);
+			}
+			
+			protected function banUserButton_clickHandler(event:MouseEvent):void{
+				if(banReasonInputText.text != "" && banReasonInputText.text != "Put Ban Reason Here"){
+					var administrationPanelEvent:AdministrationPanelEvent = new AdministrationPanelEvent(AdministrationPanel.ON_BAN_USER_BUTTON_CLICKED);
+					administrationPanelEvent.banReason = banReasonInputText.text;
+					dispatchEvent(administrationPanelEvent);
+				}else{
+					Alert.show("You must put in a ban reason", "Need Ban Reason");
+				}
+				
+				var eve:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve);
+			}
+			
+			protected function unBanUserButton_clickHandler(event:MouseEvent):void{
+				if(unBanIPInputText.text != "" && unBanIPInputText.text != "Put IP Here")
+				{
+					var administrationPanelEvent:AdministrationPanelEvent = new AdministrationPanelEvent(AdministrationPanel.ON_UNBAN_USER_BUTTON_CLICKED);
+					administrationPanelEvent.ip = unBanIPInputText.text;
+					dispatchEvent(administrationPanelEvent);
+				}else{
+					Alert.show("You must put in an IP to unban", "Need IP Address");
+				}
+			
+				var eve:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve);
+			}
+			//Changes By Mandeep			
+			
+			protected function closeButton_clickHandler(event:MouseEvent):void{
+				var e:Event = new Event(AdministrationPanel.ON_CLOSE_BUTTON_CLICKED);
+				dispatchEvent(e);
+				
+				var eve:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve);
+			}
+			
+			protected function administrationPanel_mouseDownHandler(event:MouseEvent):void{
+				startDrag();
+				
+			}
+			
+			protected function administrationPanel_mouseUpHandler(event:MouseEvent):void{
+				/*if(event.target.id == "banReasonInputText")
+				{
+					banReasonInputText.text = "Ban Reason Here";
+				}
+				if(event.target.id == "unBanIPInputText")
+				{
+					unBanIPInputText.text = "Put IP Here To Unban";
+				}*/
+				banReasonInputText.text = "Ban Reason Here";
+				unBanIPInputText.text = "Put IP Here To Unban";
+				if(event.target is RichEditableText)
+				{
+					//do nothing
+				}
+				else
+				{
+					stage.focus = administrationPanel;
+				}
+				stopDrag();
+			}
+			
+			protected function administrationPanel_mouseOutHandler(event:MouseEvent):void{
+				stopDrag();
+			}
+			
+			protected function moveUserToShow_clickHandler(event:MouseEvent):void
+			{
+				var eve:Event = new Event(AdministrationPanel.ON_MOVE_USER_TO_SHOW);;
+				dispatchEvent(eve);	
+				var eve1:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve1);
+			}
+			
+			protected function moveUSerToGreen_clickHandler(event:MouseEvent):void
+			{
+				var eve:Event = new Event(AdministrationPanel.ON_MOVE_USER_TO_GREEN_ROOM);;
+				dispatchEvent(eve);
+				var eve1:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve1);
+			}
+			
+			protected function startPrivateVidChat_clickHandler(event:MouseEvent):void
+			{
+				var eve:Event = new Event(AdministrationPanel.ON_START_PRIVAT_VID_CHAT);;
+				dispatchEvent(eve);
+				var eve1:Event = new Event(AdministrationPanel.ON_REMOVE_POPUP);;
+				dispatchEvent(eve1);
+			}
+			
+			public function get userID():Number
+			{
+				return _userID;
+			}
+			
+			public function set userID(value:Number):void
+			{
+				_userID = value;
+			}
+			
+			protected function unBanIPInputText_clickHandler(event:MouseEvent):void
+			{
+				// TODO Auto-generated method stub
+				event.target.text = "";
+				//unBanIPInputText.text = "";
+			}
+			
+			protected function banReasonInputText_focusOutHandler(event:FocusEvent):void
+			{
+			//	
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<s:Panel left="0" right="0" top="0" bottom="-19" id="administrationPanel" title="Administration Panel" mouseDown="administrationPanel_mouseDownHandler(event)" mouseUp="administrationPanel_mouseUpHandler(event)" mouseOut="administrationPanel_mouseOutHandler(event)">
+		<s:layout>
+			<s:VerticalLayout gap="10" horizontalAlign="center" paddingBottom="10" paddingLeft="10" paddingRight="10" paddingTop="10"/>
+		</s:layout>
+		<mx:HRule width="100%"/>
+		<s:Group id="userDetaildgrp" width="100%">
+			<s:layout>
+				<s:VerticalLayout horizontalAlign="center" verticalAlign="middle"/>
+			</s:layout>
+			<s:Group width="100%">
+				<s:layout>
+					<s:HorizontalLayout horizontalAlign="center" verticalAlign="middle"/>
+				</s:layout>
+				<s:Label id="userNameLbl" text="Name"/>
+				<s:Spacer width="60%"/>
+				<s:Label id="userName"/>
+			</s:Group>
+			<s:Group width="100%">
+				<s:layout>
+					<s:HorizontalLayout horizontalAlign="center" verticalAlign="middle"/>
+				</s:layout>
+				<s:Label id="userAgeLbl" text="Age"/>
+				<s:Spacer width="60%"/>
+				<s:Label id="userAge"/>
+			</s:Group>
+			<s:Group width="100%">
+				<s:layout>
+					<s:HorizontalLayout horizontalAlign="center" verticalAlign="middle"/>
+				</s:layout>
+				<s:Label id="userCityLbl" text="City"/>
+				<s:Spacer width="60%"/>
+				<s:Label id="userCity"/>
+			</s:Group>
+		</s:Group>
+		<mx:HRule width="100%"/>
+		<s:Button width="288" id="startPrivateVidChat" label="Start Private Video Chat" click="startPrivateVidChat_clickHandler(event)"/>
+		<s:Button width="288" id="moveUserToShow" label="Move User to Show" click="moveUserToShow_clickHandler(event)"/>
+		<s:Button width="288" id="moveUserToGreen" label="Move User to Green Room" click="moveUSerToGreen_clickHandler(event)" visible="false" includeInLayout="false"/>
+		<mx:HRule width="100%"/>
+		<s:Button id="clearChatButton" width="100%" label="Clear the Chat Area" click="clearChatButton_clickHandler(event)"/>
+		<s:Button id="listBannedUsersButton" width="100%" label="List all Banned Users" click="listBannedUsersButton_clickHandler(event)"/>
+		<s:Button id="kickUserButton" width="100%" label="Kick Selected User" click="kickUserButton_clickHandler(event)"/>
+		<s:Button id="banUserButton" width="100%" label="Ban Selected User" click="banUserButton_clickHandler(event)"/>
+		<s:TextInput width="288" text="Ban Reason Here" id="banReasonInputText" skinClass="skins.CustomTextInputSkin" click="unBanIPInputText_clickHandler(event)" focusOut="banReasonInputText_focusOutHandler(event)"/>
+		<s:Button id="unBanUserButton" width="100%" label="Unban User by IP" click="unBanUserButton_clickHandler(event)"/>
+		<s:TextInput width="288" text="Put IP Here To Unban" id="unBanIPInputText" skinClass="skins.CustomTextInputSkin" click="unBanIPInputText_clickHandler(event)"/>
+	</s:Panel>
+	<s:Button id="closeButton" y="5" right="5" label="Close" click="closeButton_clickHandler(event)"/>
+</s:Group>

@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" 
+				autoDrawBackground="true">	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.WowzaCustomEvent;
+			
+			import mx.controls.listClasses.BaseListData;
+			import mx.events.FlexEvent;
+			
+			import components.CustomList;
+			
+			import valueObjects.User;
+			
+			[Bindable]
+			private var item:Object;
+			[Bindable]
+			private var _isActive:Boolean = false;
+			[Bindable]
+			private var _isPresenter:Boolean = false;
+			[Bindable]
+			private var _isMod:Boolean = false;
+			
+			private var _listData:BaseListData;
+			
+			public function get listData():BaseListData
+			{
+				return _listData;
+			}
+			public function set listData(value:BaseListData):void
+			{
+				_listData = value;
+			}
+			
+			
+			override public function set data(value:Object):void
+			{
+				try
+				{	
+					if(value || data)
+					{
+						item = value;
+						
+						var user:User = new User(item);
+						
+						if(user.userName)
+						{
+							username.text = user.userName;
+						}
+						
+						var list:CustomList = this.owner as CustomList;
+						
+						if(chatButton != null && user != null)
+						{
+							if(user.inPrivateChat != true)
+							{
+								chatButton.visible = false;
+								chatButton.includeInLayout = false;
+							}
+							else
+							{
+								chatButton.visible = true;
+								chatButton.includeInLayout = true;
+							}
+						}
+												
+						var list1:CustomList = this.owner as CustomList;
+						var showUsers:Number = list1._showUsers;
+						//AppManager.getInstance().log("Show users in the list is : "+showUsers+" and _index is : "+itemIndex);
+						
+						var userInShow:int = AppManager.getInstance().showArrPos;
+						
+						if(itemIndex < 24+userInShow)
+						{
+								username.setStyle("color","blue");
+						}	
+						else
+						{
+							username.text = user.userName;
+							username.setStyle("color","black");
+						}
+						
+						if(user.showPos > 0)
+						{
+							username.setStyle("color","red");
+							username.text = user.userName +"                       Position: " +user.showPos.toString();
+							
+						}
+						else
+						{
+							username.text = user.userName;
+							if(itemIndex < 24+userInShow)
+							{
+								username.setStyle("color","blue");
+							}
+							else
+							{
+								username.text = user.userName;
+								username.setStyle("color","black");
+							}
+						}
+						
+					}
+					var event:Event = new WowzaCustomEvent("updateListLabel",true,true);
+					dispatchEvent(event);
+				} catch (e:Error)
+				{
+					AppManager.getInstance().log("set data in rederer error")
+				}
+			}
+			
+			protected function chatButton_clickHandler(event:MouseEvent):void
+			{
+				var list:CustomList = this.owner as CustomList;
+				list._userList.ChatButton_clickHandler(event);
+				chatButton.enabled = false;
+			}
+
+			
+			protected function chatButton_creationCompleteHandler(event:FlexEvent):void
+			{
+				var list:CustomList = this.owner as CustomList;
+				var userID:int = int(list._userID);
+				if(item != null)
+				{
+					var itemUserId:int = int(item.userID);
+					if(list != null)
+					{
+						if(userID == itemUserId)
+						{
+							chatButton.enabled = false;
+						}
+						else
+						{
+							chatButton.enabled = true;
+						}
+					}
+				}
+			}
+			
+			
+			override protected function commitProperties():void
+			{
+				var list:CustomList = this.owner as CustomList;
+				if(chatButton != null && item != null)
+				{
+					var event:Event = new Event("updateListLabel",true,true);
+					dispatchEvent(event);
+				}
+			}
+			
+			protected function userControlsButton_clickHandler(event:MouseEvent):void
+			{
+				var eve:Event = new WowzaCustomEvent("openModWindow",true,true);
+				dispatchEvent(eve);
+			}
+			
+			
+		]]>
+	</fx:Script>
+	
+	<s:Group height="100%" width="100%">
+		<s:layout>
+			<s:HorizontalLayout paddingRight="3" paddingLeft="3" paddingBottom="1" paddingTop="1" horizontalAlign="center" verticalAlign="middle"/>
+		</s:layout>
+		<s:Label id="username"/>
+		<s:Spacer width="100%"/>
+		<s:Button id="chatButton" toolTip="Chat" width="23" height="23" click="chatButton_clickHandler(event)"
+				   creationComplete="chatButton_creationCompleteHandler(event)"
+				   skinClass="skins.ChatSkin"/>
+		<s:Button id="userControlsButton" toolTip="Option" width="23" height="23"
+				   click="userControlsButton_clickHandler(event)"
+				   skinClass="skins.AdminActionButtonSkin"/>
+	</s:Group>
+	
+</s:ItemRenderer>

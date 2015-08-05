@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="160" height="140" xmlns:components="components.*" xmlns:VideoPods="components.VideoPods.*"
+		 >
+	
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Metadata>
+		[Event(name="publishStart", type="flash.events.Event")]
+		[Event(name="publishStop", type="com.encast.WowzaCustomEvent")]
+		[Event(name="streamStop", type="com.encast.WowzaCustomEvent")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			import com.encast.WowzaCustomEvent;
+			
+			import flash.media.MicrophoneEnhancedMode;
+			import flash.media.MicrophoneEnhancedOptions;
+			
+			
+			private var _vid:Video;
+			private var _cam:Camera;
+			private var _mic:Microphone;
+			private var _micOptions:MicrophoneEnhancedOptions;
+			private var _nc:NetConnectionManager;
+			private var _ns:NetStream;
+			private var _so:SharedObject;
+			private var _userID:Number;
+			private var _userName:String;
+			private var _inited:Boolean = false;
+			
+			private var _playingVideo:Boolean = false;
+			private var _publishingVideo:Boolean = false;
+			
+			private var _playingUserName:String = "";
+			private var _playingUserId:String = "";
+			private var _playingUserEmail:String = "";
+			private var _playingUserPos:Number = 0;
+			
+			private var _showId:String;
+			
+			
+			[Bindable]
+			public var title:String;
+			
+			public function initializeVideoPod(nc:NetConnectionManager):void{
+				_nc = nc;
+				_nc.addEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				_userID = AppManager.getInstance().userID;
+				_userName = AppManager.getInstance().userName;
+				if(_publishingVideo)
+				{
+					stopPublishingVideo();
+				}
+
+				_vid = new Video(145, 145);
+				
+				if(videoPod)
+					videoPod.addChild(_vid);
+				
+				_so = SharedObject.getRemote("userVideos", _nc.uri, false);
+				_so.addEventListener(SyncEvent.SYNC, onSync);
+				_so.client = this;
+				_so.connect(_nc);
+					
+			}
+			
+			private function onNetStatusNC(e:NetStatusEvent):void
+			{
+				var info:Object = e.info;
+				if (info.code == "NetConnection.Connect.Success") 
+				{ 
+					if(sendVideoButton!= null)
+					{
+						sendVideoButton.visible = true;
+						publishVideo();
+					} 
+				} 
+				else if (info.code == "NetConnection.Connect.Failed" || info.code == "NetConnection.Connect.Closed") { 
+				
+				} 
+			}
+			
+			private function onNetStreamStatus(e:NetStatusEvent):void{
+
+				 var dis:String = e.info.description;
+				 var user:String = "";
+				if(dis)
+				{
+					var tempArray1:Array = dis.split("_");
+					var tempStr:String = tempArray1[1];
+					var temparray:Array = tempStr.split(" ");
+					 user= "user_"+temparray[0];
+				}
+				var c:String = e.info.code; 
+				
+				if(c == "NetStream.Unpublish.Success")
+				{
+					
+				}
+				else if(_playingVideo == true && c == "NetStream.Play.UnpublishNotify")
+				{
+					
+				}
+				else if(c == "NetStream.Play.StreamNotFound")
+				{
+					AppManager.getInstance().log("Not found");
+				}
+			}
+			
+			private function onSync(e:SyncEvent):void
+			{
+				for(var i:Object in _so.data)
+				{
+					var poInfo:Object = _so.data[i];
+					var pos:Number = Number(poInfo.showPos)
+					if(poInfo.publishing == true && pos != 0 && poInfo.publishingUserID == _playingUserId)
+					{
+						_playingUserPos = pos;
+					} 
+				}
+			
+				_so.removeEventListener(SyncEvent.SYNC, onSync);
+			}
+			
+			private function showButton(buttonName:String):void{
+				//AppManager.getInstance().log("showButton : "+buttonName);
+				try
+				{
+					sendVideoButton.visible = true;
+					if(buttonName == "play"){
+						sendVideoButton.label = "Stop";
+					}else if(buttonName == "stop"){
+						sendVideoButton.label = "Start";
+					}else{
+						sendVideoButton.visible = false;
+					}
+				} catch (e:Error)
+				{
+					AppManager.getInstance().log("error in hsow button")
+				}
+			}
+			
+			public function playStream(playUserIDStream:Number, playUserNameStream:String, pos:Number):void{
+			//AppManager.getInstance().log("play stream : "+playUserIDStream+ " and name : "+playUserIDStream);	
+				if(_publishingVideo == false && _userID == playUserIDStream){
+					//playVideo(playUserIDStream.toString(), playUserNameStream);
+				}
+			}
+			
+			public function stopStream():void{
+				//AppManager.getInstance().log("stopStream called : "+AppManager.getInstance().userName);
+				if(_publishingVideo == false && _playingVideo == false){
+					showButton("stop");
+				}
+			}
+			
+			public function muteAudio():void{
+				//_ns.receiveAudio(false);
+			}
+			
+			public function unMuteAudio():void{
+				//_ns.receiveAudio(true);
+			}
+			
+			private function playVideo(userID:String, userName:String):void{
+				_ns = new NetStream(_nc);
+				_ns.client = this;
+				_ns.addEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+				showButton("");
+				_playingVideo = true;
+				_vid.attachNetStream(_ns);
+				_ns.play("user_" + userID, -1, -1);
+				title = userName;
+				//nameLabel.visible = true;
+				_vid.visible = true;
+				_playingUserName = userName;
+				videoPod.visible = true;
+			}
+			
+			public function stopVideo(user:String):void{
+				//AppManager.getInstance().log("stopVideo called username : "+AppManager.getInstance().userName+ " id video is : "+this.id);
+				videoPodAudioControl.currentState = "Unmuted";
+				_playingVideo = false;
+				
+				_ns.close();
+				_vid.attachNetStream(null);
+				_vid.clear();
+				_vid.visible = false;
+				title = "";
+				//nameLabel.visible = false;
+				showButton("stop");
+				_playingUserName = "";
+				//AppManager.getInstance().log("stopVideo for username : "+AppManager.getInstance().userName+ " and id : "+this.id+" asked to stop : "+user);
+			}
+			
+			public function publishVideo():void{
+				try
+				{
+					videoPod.visible = true;
+					_publishingVideo = true;
+					_ns = null;
+					_ns = new NetStream(_nc);
+					_ns.client = this;
+					_ns.addEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					
+					_cam = Camera.getCamera();
+					_cam.setQuality(0, 85);
+					_cam.setMode(240, 180, 10);
+					
+					
+					var version:String = Capabilities.version;
+					var _osSplitArr:Array = version.split(' ');
+					var _versionSplitArr:Array = _osSplitArr[1].split(',');
+					
+					var majorVersion:Number = new Number(_versionSplitArr[0]);
+					var minorVersion:Number = new Number(_versionSplitArr[1]);
+					
+					var canSupportEnhanced:Boolean = false;
+					if(majorVersion < 11){
+						if(majorVersion == 10){
+							//see if it's minor 3 or higher
+							if(minorVersion >= 3){
+								canSupportEnhanced = true;
+							}
+							
+						}
+					}else{
+						canSupportEnhanced = true;
+					}
+					
+					
+					if(canSupportEnhanced == true){
+						_mic = Microphone.getEnhancedMicrophone();
+						
+						_micOptions = new MicrophoneEnhancedOptions();
+						_micOptions.mode = MicrophoneEnhancedMode.FULL_DUPLEX;
+						_micOptions.echoPath = 128;
+						_micOptions.autoGain = false;
+						_micOptions.nonLinearProcessing = true;
+						
+						_mic.enhancedOptions = _micOptions;
+					}else{
+						_mic = Microphone.getMicrophone();
+						_mic.rate = 11;
+					}
+					
+					_mic.setLoopBack(false);
+					_vid.attachCamera(_cam);
+					_ns.attachCamera(_cam);
+					_ns.attachAudio(_mic);
+					_ns.publish("user_" + _userID.toString(), "LIVE");
+
+					//_so.send("playStream", _playingUserId, _playingUserName, _playingUserPos);
+					
+					AppManager.getInstance().log("Publishin for user : _playingUserId : "+_playingUserId+" _playingUserName : "+_playingUserName+" _playingUserPos : "+_playingUserPos);
+					
+					title = _userName;
+					//nameLabel.visible = true;
+					_vid.visible = true;
+					showButton("play");
+					
+					_playingUserName = AppManager.getInstance().userName;
+					
+					var eventObj:Event = new Event("publishStart");
+					dispatchEvent(eventObj);
+				}
+				catch(e:Error)
+				{
+					AppManager.getInstance().log("error publishing vid "+e.message);
+				}
+			}
+		
+			public function stopPublishingVideo():void{
+				videoPodAudioControl.currentState = "Unmuted";
+				_publishingVideo = false;
+				if(_userID)
+				{
+					if(_ns)
+					{
+						_ns.attachCamera(null);
+						_ns.attachAudio(null);
+						_ns.publish(null);
+						_ns.close();
+						_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+						_ns = null;
+					}
+					
+					if(_vid)
+					{
+						_vid.attachCamera(null);
+						_vid.clear();
+						_vid.visible = false;
+					}
+						
+					title = "";
+					showButton("stop");
+					
+					_playingUserName = "";
+				}
+			}
+			
+			public function stopUser(userID:Number):void{
+				//AppManager.getInstance().log("Stop user called for : "+userID+" and the current user is : "+AppManager.getInstance().userName);
+				if(_so.data.publishingUserID == userID){
+					stopVideo("user");
+				}
+			}
+			
+			public function onPublishStart():void{
+				if(_publishingVideo == false){
+					//hide the button to start publishing, this pod is not being used and we want to limit the user to one pod
+					showButton("");
+				}
+			}
+			
+			public function onPublishStop():void
+			{
+				if(_playingVideo == false && _publishingVideo == false)
+				{
+					//AppManager.getInstance().log("onPublishStop strat");
+					showButton("stop");
+				}
+			}
+			
+			public function setUserName(userName:String):void{
+				title = userName;
+			}
+			
+			protected function sendVideoButton_clickHandler(event:MouseEvent):void{
+				if(_publishingVideo == true){
+					stopPublishingVideo();
+				}else{
+					publishVideo();
+				}
+			}
+			
+			protected function videopodaudiocontrol_onMuteHandler(event:Event):void{
+				//make sure there is a net stream to call it on to
+				if(_playingVideo == true){
+					_so.send("muteAudio");
+					//set the control to the right state
+					videoPodAudioControl.currentState = "Muted";
+				}
+			}
+			
+			protected function videopodaudiocontrol_onUnmuteHandler(event:Event):void{
+				if(_playingVideo == true){
+					_so.send("unMuteAudio");
+					//set the control to the right state
+					videoPodAudioControl.currentState = "Unmuted";
+				}
+			}
+			
+			public function setVideoPodAudioControl():void{
+				videoPodAudioControl.visible = true;
+			}
+			
+			public function setVideoPodStartControl(value:Boolean):void{
+				sendVideoButton.visible = value;
+				this.id
+			}
+			
+			public function get userID():Number
+			{
+				return _userID;
+			}
+			
+			public function get userName():String
+			{
+				return _userName;
+			}
+			
+			public function get playingUserName():String
+			{
+				return _playingUserName;
+			}
+			
+			public function get showId():String
+			{
+				return _showId;
+			}
+			
+			public function set showId(value:String):void
+			{
+				if(value != null)
+				{
+					_showId = value
+				}
+			}
+			
+			
+			public function destroy():void
+			{
+				if(_ns)
+				{
+					_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+				}
+				
+				if(_nc)
+				{
+					_nc.removeEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				}
+				if(_publishingVideo)
+				{
+					/* AppManager.getInstance().log("destroyed user vid pod : "+this.id)
+					_so.setProperty("publishingUserID", null);
+					_so.setProperty("publishingUserName", null);
+					_so.setProperty("showId", null);
+					_so.setProperty("publishing", null);
+					_so.setProperty("publishingUserEmail", null);
+					_so.setProperty("publishingPodID", null); */
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:SkinnableContainer id="videoPodPanel" width="100%" height="100%" skinClass="skins.VideoPodSkin"> <!--backgroundAlpha="0.93"
+						  backgroundColor="0x425159">title="{title}"-->
+		<mx:UIComponent id="videoPod" x="3" y="3">
+			
+		</mx:UIComponent>
+		<s:Button id="sendVideoButton" right="3" bottom="3" label="Start" click="sendVideoButton_clickHandler(event)" visible="false"/>
+		<!--<components:MultiLineLabel id="nameLabel" visible="false" left="3" bottom="3" color="#02001A"
+				 fontFamily="Courier New" fontSize="17" fontWeight="bold" text="{title}" width="250"/>-->
+		<VideoPods:VideoPodAudioControl id="videoPodAudioControl" right="3" top="3" onMuteAudio="videopodaudiocontrol_onMuteHandler(event)" onUnmuteAudio="videopodaudiocontrol_onUnmuteHandler(event)" visible="false"/>
+	</s:SkinnableContainer>
+</s:Group>

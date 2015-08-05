@@ -1,0 +1,573 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 width="160" height="140" xmlns:components="components.*" xmlns:VideoPods="components.VideoPods.*"
+		 >
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Metadata>
+		[Event(name="streamStop", type="com.encast.WowzaCustomEvent")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			import com.encast.UserRole;
+			import com.encast.WowzaCustomEvent;
+			
+			import flash.media.Video;
+			
+			
+			private var _vid:Video;
+			private var _nc:NetConnectionManager;
+			private var _ns:NetStream;
+			private var _so:SharedObject;
+			
+			private var _inited:Boolean = false;
+			
+			private var _playingUserName:String = "";
+			private var _playingUserId:String = "";
+			private var _playingUserEmail:String = "";
+			
+			private var _playingVideo:Boolean = false;
+			private var _isFullscreen:Boolean = false;
+			
+			private var _showId:String;
+			private var _videoPod:VideoPod;
+			private var _showPos:Number;
+			private var _email:String = "";
+			private var _clicked:Boolean = false;
+			private var _mute:Boolean = true;
+			
+			[Bindable]
+			public var title:String;
+			
+			public function initializeVideoPod(nc:NetConnectionManager):void{
+				_nc = nc;
+				_nc.addEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				_vid = new Video(145, 145);
+				
+				videoPod.addChild(_vid);
+				
+				_so = SharedObject.getRemote("userVideos", _nc.uri, false);
+				_so.addEventListener(SyncEvent.SYNC, onSync);
+				_so.client = this;
+				_so.connect(_nc);
+				//AppManager.getInstance().log("activated : "+this.id)
+			}
+			
+			private function onNetStatusNC(e:NetStatusEvent):void{
+				
+			}
+			
+			private function onNetStreamStatus(e:NetStatusEvent):void
+			{	
+				var dis:String = e.info.description;
+				var c:String = e.info.code; 
+				
+				if(e.info.code == "NetStream.Play.Start")
+				{
+					var arr:Array = dis.split("_");
+					var str:String = arr[1];
+					
+					if(arr[1] == _playingUserId)
+					{
+						//playVideo(__playingUserId);
+					}
+				}
+				else if(c == "NetStream.Play.PublishNotify")
+				{
+					var arr3:Array = dis.split("_");
+					var str3:String = arr3[1];
+					var arr2:Array = str3.split(" ");
+					if(arr2[0] == _playingUserId)
+					{
+						playStream(_playingUserId,_playingUserName,_showPos);
+					}
+				}
+				else if(c == "NetStream.Unpublish.Success")
+				{
+					
+				}
+				else if(_playingVideo == true && c == "NetStream.Play.UnpublishNotify")
+				{
+				  stopVideo(_playingUserName);
+				}
+				else if(c == "NetStream.Play.StreamNotFound")
+				{
+					//AppManager.getInstance().log("Not found");
+				}
+			}
+			
+			private function onSync(e:SyncEvent):void
+			{
+				
+				for(var i:Object in _so.data)
+				{
+					var poInfo:Object = _so.data[i];
+					var arr:Array = AppManager.getInstance().ShowUserArray;
+					var pos:int = 0;
+					for(var k:int=0;k<arr.length;k++)
+					{
+						if(arr[k]==poInfo.publishingUserID)
+						{
+							pos = k+1;
+						}
+					}
+					
+					var userToshowPod:String = "video"+pos.toString();
+					if(poInfo.publishing == true && this.id == userToshowPod)
+					{
+						_showPos = Number(poInfo.showPos);
+						_playingUserName = poInfo.publishingUserName;
+						_playingUserId = poInfo.publishingUserID;
+						_playingUserEmail = poInfo.publishingUserEmail;
+						_email=_playingUserEmail
+						_showId = poInfo.showId;
+						if(_vid)
+						{
+							_vid.attachNetStream(null);
+							_vid.clear();
+							_vid.visible = false;
+							videoPod.visible = false;
+						}
+						playVideo(poInfo.publishingUserID.toString(),poInfo.publishingUserName,_nc,_email,showId);
+					} 
+				}
+				
+				_so.removeEventListener(SyncEvent.SYNC, onSync);
+			}
+			
+			
+			public function stopStream():void
+			{
+				//AppManager.getInstance().log("stopStream called : "+AppManager.getInstance().userName);
+				if(_playingVideo == false){
+					
+				}
+			}
+			
+			public function muteAudio():void{
+				if(_ns != null){
+					_ns.receiveAudio(false);
+					videoPodAudioControl.currentState = "Muted";
+				}
+			}
+			
+			public function unMuteAudio():void{
+				if(_ns != null)
+				{
+					_ns.receiveAudio(true);
+					videoPodAudioControl.currentState = "Unmuted";
+				}
+			}
+			
+			public function playStream(userID:String,userName:String,pos:Number):void
+			{
+				if(pos == _showPos)
+				{
+					if(_vid)
+					{
+						_vid.attachNetStream(null);
+						_vid.clear();
+						_vid.visible = false;
+						videoPod.visible = false;
+					}
+					playVideo(userID,userName,_nc,_email);
+				}
+			}
+			
+			public function playVideo(userID:String, userName:String,_nc:NetConnectionManager,email:String,showId:String=null):void{
+				_nc.addEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				if(email != "")
+				{
+					_email = email;
+				}
+				
+				if(showId != "")
+				{
+					_showId = showId;
+				}
+				_ns = new NetStream(_nc);
+				
+				_ns.receiveAudio(false);
+				videoPodAudioControl.currentState = "Muted";
+				userOption.enabled = true;
+				fullScreen.enabled = true;
+				videoPodAudioControl.enabled = true;
+				_ns.client = this;
+				_ns.addEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+				_playingVideo = true;
+				/* if(_vid)
+				{
+					_vid.attachNetStream(_ns);
+				}
+				else
+				{
+					_vid = new Video(145, 145);
+					_vid.attachNetStream(_ns);
+				} */
+				
+				if(_vid)
+				{
+					_vid.attachNetStream(null);
+					_vid.clear();
+					_vid.visible = false;
+					videoPod.visible = false;
+				}
+				
+				_vid.clear();
+				_vid.clear();
+				_vid.clear();
+				_vid.visible = false;
+				_vid.clear();
+				_vid.clear();
+				_vid.clear();				
+				
+				_vid.attachNetStream(_ns);
+				_ns.play("user_" + userID, -1, -1);
+				_playingUserId = userID;
+				//AppManager.getInstance().log("playing user in reciving Pod : user_"+userID);
+				
+				title = userName;
+				nameLabel.visible = true;
+				_vid.visible = true;
+				_playingUserName = userName;
+				videoPod.visible = true;
+				videoPod.includeInLayout = true;
+				_vid.visible = true;
+			}
+			
+			public function stopVideo(user:String):void{
+				//AppManager.getInstance().log("stopVideo called username : "+AppManager.getInstance().userName+ " id video is : "+this.id);
+				if(_playingUserName == user)
+				{
+					_playingVideo = false;
+					_ns.close();
+					_vid.attachNetStream(null);
+					_vid.clear();
+					_vid.visible = false;
+					_vid.clear();
+					_vid.visible = false;
+					title = "";
+					
+					videoPod.removeChild(_vid);
+					_vid = new Video(145, 145);
+					videoPod.addChild(_vid);
+					
+					if(_vid)
+					{
+						_vid.attachNetStream(null);
+						_vid.clear();
+						_vid.visible = false;
+						videoPod.visible = false;
+					}
+					
+					nameLabel.visible = false;
+					videoPod.visible = false;
+					videoPod.includeInLayout = false;
+					videoPodAudioControl.currentState = "Muted";
+					videoPodAudioControl.enabled = false;
+					userOption.enabled = false;
+					fullScreen.enabled = false;
+					fullScreenBack.enabled = false;
+					fullScreen.visible = true;
+					fullScreenBack.visible = false;
+					//_playingUserName = "";
+					//AppManager.getInstance().log("stopVideo for username : "+AppManager.getInstance().userName+ " and id : "+this.id+" asked to stop : "+user);
+				}
+			}
+			
+			public function onPublishStop():void
+			{
+				if(_playingVideo == false)
+				{
+					title = "";
+					nameLabel.visible = false;
+					videoPodAudioControl.currentState = "Muted";
+					videoPodAudioControl.enabled = false;
+					userOption.enabled = false;
+					fullScreen.enabled = false;
+					//AppManager.getInstance().log("onPublishStop strat");
+				}
+			}
+			
+			public function setUserName(userName:String):void{
+				title = userName;
+			}
+		
+			
+			
+			
+			public function get showId():String
+			{
+				return _showId;
+			}
+			
+			public function set showId(value:String):void
+			{
+				if(value != null)
+				{
+					_showId = value
+				}
+			}
+			
+			public function get email():String
+			{
+				return _email;
+			}
+			
+			public function set email(value:String):void
+			{
+				if(value != null)
+				{
+					_email = value
+				}
+			}
+			
+			
+			public function get playingUserName():String
+			{
+				return _playingUserName;
+			}
+			
+			public function destroy():void
+			{
+				
+				_playingUserName = "";
+				_playingUserId = "";
+				_playingUserEmail = "";
+				_playingVideo = false;
+				
+				_showId = "";
+				_showPos = 0;
+				pos = 0;
+				
+				if(_so)
+				{
+					_so.removeEventListener(SyncEvent.SYNC, onSync);
+				}
+				
+				if(_nc)
+				{
+					_nc.removeEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				}
+				
+				if(_ns)
+				{
+					_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					_ns.close();
+					_ns = null;
+				}
+				
+				if(videoPodAudioControl)
+				{
+					videoPodAudioControl.currentState = "Muted";				
+					videoPodAudioControl.currentState = "Muted";
+					videoPodAudioControl.enabled = false;
+				}
+				title = "";
+				if(nameLabel && userOption && fullScreen)
+				{
+					nameLabel.visible = false;
+					userOption.enabled = false;
+					fullScreen.enabled = false;
+				}
+			}
+			
+			protected function userOption_clickHandler(event:MouseEvent):void
+			{
+				_clicked = true;
+				removeThisPod();
+			}
+			
+			public function removeThisPod():void
+			{
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{
+					if(_playingUserId != null && _nc != null && showId != "" && _email != "")
+					{
+						var msg :String = "/MoveUserToGreenRoom/"+_playingUserId+"/"+_email+"/"+showId;
+						var colour:String = "FFFFFF";
+						AppManager.getInstance().log("msg is :"+msg);
+						var obj:Object = new Object();
+						obj.id = _playingUserId;
+						if(_clicked == true)
+						{
+							dispatchEvent(new WowzaCustomEvent("RecivingPodRemoved",true,true,obj));
+							_clicked = false
+						}
+						_nc.call("sendMessage", null, msg, "#" + colour, _playingUserId, showId, false, 0);
+					}
+				}
+			}
+			
+			public function set pos(value:Number):void
+			{
+				_showPos = value;
+			}
+			
+			public function get pos():Number
+			{
+				return _showPos;
+			}
+			
+			public function onEnlargeVideo():void
+			{
+				AppManager.getInstance().log("enlage")
+			}
+			
+			protected function videopodaudiocontrol_onMuteHandler(event:Event):void{
+				//make sure there is a net stream to call it on to
+				mute();
+			}
+			
+			public function mute():void
+			{
+				if(_playingVideo == true){
+					//_ns.receiveAudio(false);
+					//_so.send("muteAudio");
+					var obj:Object = new Object();
+					obj.id = _playingUserId;
+					//dispatchEvent(new WowzaCustomEvent("enlargeVideo",true,true,obj));
+					videoPodAudioControl.currentState = "Muted";
+					
+					if(_playingUserId != null)
+					{
+						var msg :String = "/enableAudio/OFF/"+_playingUserId;
+						var colour:String = "FFFFFF";
+						AppManager.getInstance().log("msg is :"+msg);
+						_nc.call("sendMessage", null, msg, "#" + colour, _playingUserId, showId, false, 0);
+					}
+				}
+			}
+			
+			protected function videopodaudiocontrol_onUnmuteHandler(event:Event):void{
+				unMute();
+			}
+			
+			public function unMute():void
+			{
+				if(_playingVideo == true)
+				{
+					//_ns.receiveAudio(true);
+					//_so.send("unMuteAudio");
+					var temp:Object = new Object();
+					temp.name = _playingUserName;
+					var eve:WowzaCustomEvent = new WowzaCustomEvent("audioStarted",true,true,temp);
+					dispatchEvent(eve);
+					
+					if(_playingUserId != null)
+					{
+						var msg :String = "/enableAudio/ON/"+_playingUserId;
+						var colour:String = "FFFFFF";
+						AppManager.getInstance().log("msg is :"+msg);
+						_nc.call("sendMessage", null, msg, "#" + colour, _playingUserId, showId, false, 0);
+					}
+					
+					videoPodAudioControl.currentState = "Unmuted";
+				}
+			}
+			
+			protected function fullScreen_clickHandler(event:MouseEvent):void
+			{
+				var temp:Object = new Object();
+				if(_playingUserId != null && fullScreenBack.visible == false)
+				{
+					var msg :String = "/enlargeVideo "+_playingUserId;
+					var colour:String = "FFFFFF"; 
+					_nc.call("sendMessage", null, msg, "#" + colour, _playingUserId, showId, false, 0);
+					_isFullscreen = true;
+					fullScreenBack.visible = true;
+					fullScreen.visible = false;
+					fullScreenBack.enabled = true;
+					temp.act = "enlarge";
+				}
+				else
+				{
+					temp.act = "rest";
+					var msg1 :String = "/restorVideo "+_playingUserId;
+					var colour1:String = "FFFFFF";
+					_nc.call("sendMessage", null, msg1, "#" + colour1, _playingUserId, showId, false, 0);
+					_isFullscreen = false;
+					fullScreenBack.visible = false;
+					fullScreen.visible = true;
+					fullScreen.enabled = true;
+				}
+				temp.name = _playingUserName;
+				var eve:WowzaCustomEvent = new WowzaCustomEvent("fullscreen",true,true,temp);
+				dispatchEvent(eve);
+			}
+			
+			public function setFullScreenOff():void
+			{
+				fullScreenBack.visible = false;
+				fullScreen.visible = true;
+			}
+			
+			public function setAudioDisable():void
+			{
+				videoPodAudioControl.enabled = false;
+				if(_playingVideo == true && videoPodAudioControl.currentState == "Unmuted" && fullScreen.visible == false){
+					_ns.receiveAudio(false);
+					_so.send("muteAudio");
+					var obj:Object = new Object();
+					obj.id = _playingUserId;
+					//dispatchEvent(new WowzaCustomEvent("enlargeVideo",true,true,obj));
+					videoPodAudioControl.currentState = "Muted";
+					
+					if(_playingUserId != null)
+					{
+						var msg :String = "/enableAudio/OFF/"+_playingUserId;
+						var colour:String = "FFFFFF";
+						AppManager.getInstance().log("msg is :"+msg);
+						_nc.call("sendMessage", null, msg, "#" + colour, _playingUserId, showId, false, 0);
+					}
+				}
+			}
+			
+			public function setAudioenable():void
+			{
+				videoPodAudioControl.enabled = true;
+			}
+			
+			public function setFullScreenDisable():void
+			{
+				fullScreen.enabled = false;
+			}
+			
+			public function setFullScreenenable():void
+			{
+				fullScreen.enabled = true;
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:SkinnableContainer id="videoPodPanel" width="100%" height="100%" skinClass="skins.VideoPodSkin"> <!--backgroundAlpha="0.93"
+		backgroundColor="0x425159">title="{title}"-->
+		<s:Image id="user" width="155" height="140" horizontalCenter="0"
+				 source="@Embed('assets/user.png')" verticalCenter="-2"/>
+		<mx:UIComponent id="videoPod" x="20" y="3">
+			
+		</mx:UIComponent>
+		<s:Label id="nameLabel" visible="false" left="3" bottom="3" color="#02001A"
+				 fontFamily="Arial" fontSize="17" fontWeight="bold" text="{title}"/>
+		<s:Button id="fullScreen" right="65" bottom="5" 
+				  click="fullScreen_clickHandler(event)" enabled="false"
+				  skinClass="spark.skins.spark.mediaClasses.normal.FullScreenButtonSkin"
+				  alpha="0.5"/> 
+		<s:Button id="fullScreenBack" right="65" bottom="5" 
+				  click="fullScreen_clickHandler(event)" visible="false"
+				  skinClass="spark.skins.spark.mediaClasses.fullScreen.FullScreenButtonSkin"/> 
+		<s:Button id="userOption" height="23" width="23" right="5" bottom="5" skinClass="skins.RemoveUSerSkin" enabled="false" click="userOption_clickHandler(event)"/>
+		<VideoPods:VideoPodAudioControl id="videoPodAudioControl" right="36" bottom="5"
+										onMuteAudio="videopodaudiocontrol_onMuteHandler(event)" currentState="Muted"
+										onUnmuteAudio="videopodaudiocontrol_onUnmuteHandler(event)" enabled="false"/>
+	</s:SkinnableContainer>
+</s:Group>

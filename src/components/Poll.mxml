@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx"
+		 width="100%" height="100%" 
+		 xmlns:layouts="layouts.*"
+		 creationComplete="group1_creationCompleteHandler(event)">
+	<fx:Script>
+		<![CDATA[
+			import com.carlcalderon.arthropod.Debug;
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			
+			import mx.controls.Alert;
+			import mx.controls.RadioButton;
+			import mx.events.FlexEvent;
+			
+			import spark.components.HGroup;
+			
+			private var _lobby:UserClientLobby;
+			private var _userId:Number = 0;
+			
+			private var _nc:NetConnectionManager;
+			private var _info:Object;
+			private var _pollID:String = "";
+			
+			private var _so:SharedObject;
+			private var ansObj:String;
+			
+			private function onSync(e:SyncEvent):void{		
+				//currentState = "noPolls";
+				for each (var i:Object in _so.data)
+				{
+					if(i.hasOwnProperty("active"))
+					{
+						//currentState = "Polls";
+						var obj:Object = i;	
+						var type:String = i.pollType;
+						if(type == "SUBJECTIVE")
+						{
+							currentState = "subjective";
+							queTitleSub.text = obj.pollTitle;
+							quetextSub.text = obj.pollQues;
+							if(optionGrpOb != null)
+								optionGrpOb.removeAllElements();
+							
+							_pollID = obj.pollId;
+							
+							if(i.hasOwnProperty("answer"))
+							{
+								var answer:String = i.answer;
+								var username:String = AppManager.getInstance().userName;
+								if(answer.search(username) != -1)
+								{
+									currentState = "noPoll";
+								}
+							}
+							break;
+						}
+						else if(type == "OBJECTIVE")
+						{
+							currentState = "objective";
+							queTitleOb.text = obj.pollTitle;
+							
+							if(optionGrpOb != null)
+								optionGrpOb.removeAllElements();
+							
+							var queStr:String = obj.pollQues;
+							var queAnsArr:Array = queStr.split("`");
+							
+							for(var k:int = 0;k<queAnsArr.length;k++)
+							{
+								if(k == 0)
+								{
+									quetextOb.text =queAnsArr[k];
+								}
+								else
+								{
+									var hgrp:HGroup = new HGroup();
+									var radiobutton:RadioButton = new RadioButton();
+									radiobutton.addEventListener(MouseEvent.CLICK,onChoosingAnsObj)
+									radiobutton.label = queAnsArr[k];
+									hgrp.addElement(radiobutton);
+									optionGrpOb.addElement(hgrp);
+								}
+							}							
+							_pollID = obj.pollId;
+							AppManager.getInstance().log("and so data us : "+queStr+" queAnsArr "+queAnsArr.toString())
+							
+							if(i.hasOwnProperty("answer"))
+							{
+								var answer1:String = i.answer;
+								var username1:String = AppManager.getInstance().userName;
+								if(answer1.search(username1) != -1)
+								{
+									currentState = "noPoll";
+								}
+							}
+						}
+					}
+				}
+				_so.removeEventListener(SyncEvent.SYNC, onSync);				
+			}
+			
+			
+			
+			protected function group1_creationCompleteHandler(event:FlexEvent):void
+			{
+				currentState = "noPoll";
+			}
+			
+			public function init(nc:NetConnectionManager,lobby:UserClientLobby):void
+			{
+				_lobby = lobby;
+				_nc = nc;
+				_so = SharedObject.getRemote("pollQuestion", _nc.uri, true);
+				_so.addEventListener(SyncEvent.SYNC, onSync);
+				_so.connect(_nc);
+				_so.client = this;
+			}
+			
+			protected function submitbtn_clickHandler(event:MouseEvent):void
+			{
+				if(subTextInp.text != "")
+				{
+					if(submitbtn)
+						submitbtn.enabled = false;
+					if(submitbtnObj)
+						submitbtnObj.enabled = false;
+					_lobby.sendTheMessage("/setPollAns/"+subTextInp.text+"/"+_pollID+"/"+_userId.toString());
+				}
+			}
+			
+			protected function onChoosingAnsObj(event:MouseEvent):void
+			{
+				ansObj = event.target.label;
+			}
+			protected function onSubmitObjective(event:MouseEvent):void
+			{
+				if(ansObj.length > 0)
+				{
+					if(submitbtn)
+						submitbtn.enabled = false;
+					if(submitbtnObj)
+						submitbtnObj.enabled = false;
+					_lobby.sendTheMessage("/setPollAns/"+ansObj+"/"+_pollID+"/"+_userId.toString());
+				}
+				else
+				{
+					//Alert.show("Please Enter a value.")
+				}
+			}
+			
+			public function setPoll(info:Object):void
+			{
+				AppManager.getInstance().log("setPoll called on user client");
+			}
+			
+			public function setPollAnsCients(info:Object):void
+			{
+				if(info.type == "SUBJECTIVE")
+				{
+					currentState = "subjective";
+					queTitleSub.text = info.title;
+					quetextSub.text = info.question;
+					if(optionGrpOb != null)
+						optionGrpOb.removeAllElements();
+					_pollID = info.pollId;
+				}
+				else
+				{
+					currentState = "objective";
+					queTitleOb.text = info.title;
+					
+					if(optionGrpOb != null)
+						optionGrpOb.removeAllElements();
+					
+					var queStr:String = info.question;
+					var queAnsArr:Array = queStr.split("`");
+					
+					for(var k:int = 0;k<queAnsArr.length;k++)
+					{
+						if(k == 0)
+						{
+							quetextOb.text =queAnsArr[k];
+						}
+						else
+						{
+							var hgrp:HGroup = new HGroup();
+							var radiobutton:RadioButton = new RadioButton();
+							radiobutton.addEventListener(MouseEvent.CLICK,onChoosingAnsObj)
+							radiobutton.label = queAnsArr[k];
+							hgrp.addElement(radiobutton);
+							optionGrpOb.addElement(hgrp);
+						}
+					}
+					_pollID = info.pollId;
+				}
+				
+				
+			}
+			
+			public function pollingAns(info:Object):void
+			{
+				if(info.userId == AppManager.getInstance().userID)
+				{
+					currentState = "noPoll";
+					if(submitbtn)
+						submitbtn.enabled = true;
+					if(submitbtnObj)
+						submitbtnObj.enabled = true;
+					Alert.show("Your answer is submitted. Thank You for answering.","Poll");
+				}
+				else
+				{
+					//Alert.show("Please Enter a value.");
+				}
+				//_userId = info.id;
+			}
+			
+			public function get userId():Number
+			{
+				return _userId;
+			}
+			
+			public function set userId(value:Number):void
+			{
+				_userId = value;
+			}
+		]]>
+	</fx:Script>
+	
+	<fx:Style>
+		@namespace s "library://ns.adobe.com/flex/spark";
+		@namespace mx "library://ns.adobe.com/flex/mx";
+		@namespace layouts "layouts.*";
+		
+		.title {
+			fontWeight : bold;
+			fontSize : 16px;
+		}
+		
+	</fx:Style>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<s:states>
+		<s:State name="noPoll"/>
+		<s:State name="objective"/>
+		<s:State name="subjective"/>
+	</s:states>
+	
+	<s:Group id="noPoll" includeIn="noPoll" width="100%" height="100%" fontFamily="Times New Roman"
+			 fontSize="24">
+		<s:layout>
+			<s:VerticalLayout gap="15" paddingTop="5" paddingLeft="5" paddingRight="5" horizontalAlign="center" verticalAlign="middle"/>
+		</s:layout>
+		<s:Label id="nopolllbl" fontFamily="Arial" fontSize="21"
+				 text="There are no polls to Display yet."/>
+	</s:Group>
+	
+	<s:Group id="objectiveGrp" includeIn="objective" height="100%" width="100%">
+		<s:layout>
+			<s:VerticalLayout gap="15" paddingTop="5" paddingLeft="5" paddingRight="5" horizontalAlign="center" verticalAlign="middle"/>
+		</s:layout>
+		<s:Label id="queTitleOb" text="Question title" styleName="title"/>
+		<s:Label id="quetextOb" text="The real question should be something ike this as it appear here"/>
+		<s:VGroup id="optionGrpOb" height="100%" width="100%" verticalAlign="middle" horizontalAlign="left">
+			
+		</s:VGroup>
+		<s:Button id= "submitbtnObj" label="Submit" click="onSubmitObjective(event)"/>
+	</s:Group>
+	<s:Group id="subjectiveGrp" width="100%" height="100%" includeIn="subjective">
+		<s:layout>
+			<s:VerticalLayout gap="15" paddingTop="5" paddingLeft="5" paddingRight="5" horizontalAlign="left" verticalAlign="middle"/>
+		</s:layout>
+		<s:Label id="queTitleSub" width="100%" text="Question title" styleName="title"/>
+		<s:Label id="quetextSub"  width="100%" text="The real question should be something ike this as it appear here" color="Black"/>
+		<s:TextInput id="subTextInp" width="100%"/>
+		<s:Button id="submitbtn" label="Submit" click="submitbtn_clickHandler(event)"/>
+	</s:Group>
+</s:Group>

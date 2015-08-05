@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<components:CustomTitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   width="350" height="200" xmlns:components="components.*"
+			   title="Create Question" skinClass="skins.ChatWindowSkin"
+			   >
+	
+	<fx:Script>
+		<![CDATA[		
+			import components.AdminLobby;
+			
+			import mx.controls.Alert;
+			import mx.managers.PopUpManager;
+			import mx.utils.OnDemandEventDispatcher;
+
+			public  var mailListValue:String;
+			
+			public var lobbyVar:AdminLobby;
+			
+			protected function cancleButton_clickHandler(event:MouseEvent):void
+			{
+				PopUpManager.removePopUp(this);
+			}
+			
+			
+			protected function sendButton_clickHandler(event:MouseEvent):void
+			{
+				PopUpManager.removePopUp(this);
+			
+				mailListValue=mailList.text;
+
+ 				var msg:String="/mailList " + mailListValue;
+				lobbyVar.sendTheMessage("/mailList " + mailListValue); 				
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	 
+	<fx:Metadata>
+		[Event(name="goBackToLobby", type="flash.events.Event")]
+	</fx:Metadata>
+		
+	<!--<s:HGroup left="0" right="0" top="30" height="160" gap="20" horizontalAlign="center">
+	<components:VideoPod width="160" height="160" id="videoPod1" publishStart="videoPod_publishStartHandler(event)" publishStop="videoPod_publishStopHandler(event)" streamStop="videoPod_streamStopHandler(event)" />
+	<components:VideoPod width="160" height="160" id="videoPod2" publishStart="videoPod_publishStartHandler(event)" publishStop="videoPod_publishStopHandler(event)" streamStop="videoPod_streamStopHandler(event)" />
+	</s:HGroup>-->
+	
+	<s:Group id="InviteArea" left="0" right="0" top="0" height="100%">
+		<mx:Text width="100%" color="#060606" horizontalCenter="0"
+				 text="Enter the e-mail id of the person you want to invite. To invite more people use comma"
+				 textAlign="center" verticalCenter="-15"/>
+		<s:TextInput id="mailList" bottom="40" width="210" horizontalCenter="0" text="e-mail"/>
+		<s:Button id="cancleButton" right="10" bottom="10" width="70" label="Next" click="cancleButton_clickHandler(event)"/>
+		<s:Button id="sendButton" right="266" bottom="10" width="70" label="Prev" click="sendButton_clickHandler(event)"/>
+	</s:Group>
+</components:CustomTitleWindow>

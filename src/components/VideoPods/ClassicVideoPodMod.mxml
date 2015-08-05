@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="160" height="140" xmlns:components="components.*" xmlns:VideoPods="components.VideoPods.*">
+	
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Metadata>
+		[Event(name="publishStart", type="flash.events.Event")]
+		[Event(name="publishStop", type="com.encast.WowzaCustomEvent")]
+		[Event(name="streamStop", type="com.encast.WowzaCustomEvent")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			
+			private var _vid:Video;
+			private var _cam:Camera;
+			private var _mic:Microphone;
+			private var _micOptions:MicrophoneEnhancedOptions;
+			private var _nc:NetConnectionManager;
+			private var _ns:NetStream;
+			private var _so:SharedObject;
+			private var _userID:Number;
+			private var _userName:String;
+			private var _inited:Boolean = false;
+			private var _playingUserName:String = "";
+			
+			private var _playingVideo:Boolean = false;
+			private var _publishingVideo:Boolean = false;
+			private var _isActivePod:Boolean = false;
+			
+			[Bindable]
+			public var title:String;
+			
+			public function initializeVideoPod(nc:NetConnectionManager):void{
+				_nc = nc;
+				_nc.addEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				_userID = AppManager.getInstance().userID;
+				_userName = AppManager.getInstance().userName;
+				if(_publishingVideo)
+				{
+					stopPublishingVideo();
+				}
+				_vid = new Video(145, 145);
+				
+				videoPod.addChild(_vid);
+				
+				sendVideoButton.visible = true;
+			}
+			
+			private function onNetStatusNC(e:NetStatusEvent):void{
+				
+			}
+			
+			private function onNetStreamStatus(e:NetStatusEvent):void{
+				
+				var dis:String = e.info.description;
+				var user:String = "";
+				var c:String = e.info.code; 
+				
+				if(c == "NetStream.Unpublish.Success")
+				{
+					
+				}
+				else if(_playingVideo == true && c == "NetStream.Play.UnpublishNotify")
+				{
+					
+				}
+				else if(c == "NetStream.Play.StreamNotFound")
+				{
+					
+				}
+			}
+			
+			public function publishVideo():void{
+				try
+				{
+					videoPod.visible = true;
+					_publishingVideo = true;
+					
+					_ns = new NetStream(_nc);
+					_ns.client = this;
+					_ns.addEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					
+					_cam = Camera.getCamera();
+					_cam.setQuality(0, 85);
+					
+					_cam.setMode(145, 145, 10);
+					
+					var version:String = Capabilities.version;
+					var _osSplitArr:Array = version.split(' ');
+					var _versionSplitArr:Array = _osSplitArr[1].split(',');
+					
+					var majorVersion:Number = new Number(_versionSplitArr[0]);
+					var minorVersion:Number = new Number(_versionSplitArr[1]);
+					
+					var canSupportEnhanced:Boolean = false;
+					if(majorVersion < 11){
+						if(majorVersion == 10){
+							//see if it's minor 3 or higher
+							if(minorVersion >= 3){
+								canSupportEnhanced = true;
+							}
+							
+						}
+					}else{
+						canSupportEnhanced = true;
+					}
+					
+					
+					if(canSupportEnhanced == true){
+						_mic = Microphone.getEnhancedMicrophone();
+						
+						_micOptions = new MicrophoneEnhancedOptions();
+						_micOptions.mode = MicrophoneEnhancedMode.FULL_DUPLEX;
+						_micOptions.echoPath = 128;
+						_micOptions.autoGain = false;
+						_micOptions.nonLinearProcessing = true;
+						
+						_mic.enhancedOptions = _micOptions;
+					}else{
+						_mic = Microphone.getMicrophone();
+						_mic.rate = 11;
+					}
+					
+					_mic.setLoopBack(false);	
+					_vid.attachCamera(_cam);
+					_ns.attachCamera(_cam);
+					_ns.attachAudio(_mic);
+					
+					
+					_ns.publish("moderator1","LIVE");
+					
+					title = _userName;
+					nameLabel.visible = true;
+					_vid.visible = true;
+					
+					
+					_playingUserName = AppManager.getInstance().userName;
+				}
+				catch(e:Error)
+				{
+					//AppManager.getInstance().log("error publishing vid");
+				}
+			}
+			
+			public function stopPublishingVideo():void{
+				if(_ns)
+				{
+					_publishingVideo = false;
+					_ns.attachCamera(null);
+					_ns.attachAudio(null);
+					_ns.publish(null);
+					_ns.close();
+					_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					_ns = null;
+				}
+				
+				if(_vid)
+				{
+					_vid.attachCamera(null);
+					_vid.clear();
+					_vid.visible = false;
+				}
+				nameLabel.visible = false;
+				nameLabel.text ="";
+				title = "";
+			}
+			
+			
+			public function setUserName(userName:String):void{
+				title = userName;
+			}
+			
+			protected function sendVideoButton_clickHandler(event:MouseEvent):void{
+				if(_publishingVideo == true){
+					stopPublishingVideo();
+				}else{
+					publishVideo();
+				}
+			}
+			
+			
+			public function get userID():Number
+			{
+				return _userID;
+			}
+			
+			public function get userName():String
+			{
+				return _userName;
+			}
+			
+			public function get playingUserName():String
+			{
+				return _playingUserName;
+			}
+			
+			public function destroy():void
+			{
+				stopPublishingVideo();
+				if(_ns)
+				{
+					_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					_ns = null;
+				}
+				
+				if(_nc)
+				{
+					_nc.removeEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+					_nc = null;
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:SkinnableContainer id="videoPodPanel" width="100%" height="100%" skinClass="skins.VideoPodSkin"> <!--backgroundAlpha="0.93"
+		backgroundColor="0x425159">title="{title}"-->
+		<mx:UIComponent id="videoPod" x="3" y="3">
+			
+		</mx:UIComponent>
+		<s:Button id="sendVideoButton" right="3" bottom="3" label="Start" click="sendVideoButton_clickHandler(event)" visible="false"/>
+		<components:MultiLineLabel id="nameLabel" visible="false" left="3" bottom="3" color="#02001A"
+								   fontFamily="Arial" fontSize="17" fontWeight="bold" text="{title}"/>
+	</s:SkinnableContainer>
+</s:Group>

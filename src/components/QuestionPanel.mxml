@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009"
+			   xmlns:s="library://ns.adobe.com/flex/spark"
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   xmlns:components="components.*"
+			   width="600" height="200" close="customtitlewindow1_closeHandler(event)"
+			   skinClass="skins.ChatWindowSkin" title="Create Question"
+			   >
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<s:states>
+		<s:State name="objective"/>
+		<s:State name="subjective"/>
+	</s:states>
+	<fx:Metadata>
+		[Event(name=SUBMIT_NEW_QUE, type="flash.events.Event")]
+		[Event(name=ON_REMOVE_POPUP, type="flash.events.Event")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.WowzaCustomEvent;
+			
+			import mx.controls.Alert;
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			public static const SUBMIT_NEW_QUE:String = "onSubmitNewQue";
+			public static const ON_REMOVE_POPUP:String = "onRemovePopUp";
+			public var _optArr:Array = new Array();
+			private var count:int = 0;
+			
+			protected function goButton_clickHandler(event:MouseEvent):void{
+				var temp:Object = new Object();
+				if(currentState == "subjective" && messageText.text != "")
+				{
+					temp.title = titleName.text;
+					temp.que =	messageText.text;
+					temp.type = "SUBJECTIVE";
+					dispatchEvent(new WowzaCustomEvent("onSubmitNewQue", true, false, temp));
+					PopUpManager.removePopUp(this);
+				}
+				else if(queObjtv.text != "" && _optArr.length > 0)
+				{
+					temp.title = titleName.text;
+					var option:String = "";
+					for each(var str:String in _optArr)
+					{
+						option = option+"`"+str;
+					}
+					temp.que =	queObjtv.text+option;
+					temp.type = "OBJECTIVE";
+					dispatchEvent(new WowzaCustomEvent("onSubmitNewQue", true, false, temp));
+					PopUpManager.removePopUp(this);
+				}
+				else
+				{
+					Alert.show("Please put proper question format.","Alert",4,this)
+				}
+			}
+			
+			protected function Cancel_clickHandler(event:MouseEvent):void
+			{
+				PopUpManager.removePopUp(this);
+			}
+			
+			protected function customtitlewindow1_closeHandler(event:CloseEvent):void
+			{
+				PopUpManager.removePopUp(this);
+			}
+			
+			protected function radiobutton1_clickHandler(event:MouseEvent):void
+			{
+				currentState = "subjective";				
+			}
+			
+			protected function radiobutton2_clickHandler(event:MouseEvent):void
+			{
+				currentState = "objective";
+			}	
+			
+			protected function button1_clickHandler(event:MouseEvent):void
+			{
+				if(optlbl.text != "")
+				{
+					count = count + 1;
+					if(count < 5)
+					{
+						_optArr.push(optlbl.text);
+						
+						optlbl.text = "";
+					}
+					else
+					{
+						//Alert.show("You can add only 4 option.","Notification")
+						var alert:Alert = new Alert();
+						alert.text = "You can add only 4 option.";
+						alert.title = "Notification";
+						PopUpManager.addPopUp(alert,this);
+						PopUpManager.centerPopUp(alert);
+					}
+				}
+				else
+				{
+					Alert.show("Please put an option first","Alert",4,this);
+				}
+			}
+			
+			protected function button2_clickHandler(event:MouseEvent):void
+			{
+				_optArr = new Array();
+				count = 0;
+				optlbl.text ="";
+			}
+			
+		]]>
+	</fx:Script>
+		<s:Label left="10" bottom="140" color="Black" fontSize="18"
+				 text="Enter Question to create...."
+				 />
+		<s:TextInput id="titleName" right="10" bottom="104" width="187" borderVisible="true"
+					 fontSize="14" prompt="Title"
+					 right.objective="9" bottom.objective="130"/>
+		<s:TextArea id="messageText" x="10" bottom="45" width="578" height="50" fontSize="14"
+				prompt="Question goes here" color="Black" includeIn="subjective"/>
+		<s:Group id="OptionGroup" x="10" bottom="45" width="578" height="45" includeIn="objective">
+			<s:Group x="0" y="-29" width="100%" height="100%">
+				<s:layout>
+					<s:VerticalLayout verticalAlign="middle" horizontalAlign="center" paddingBottom="5" paddingTop="5"/>
+				</s:layout>
+				<s:TextInput id="queObjtv"  width="80%" prompt="Enter Question here"/>
+				<s:Group width="90%" height="100%">
+					<s:layout>
+						<s:HorizontalLayout horizontalAlign="center" paddingBottom="1" paddingTop="1"
+											verticalAlign="middle"/>
+					</s:layout>
+					<s:TextInput width="267" id="optlbl" prompt="Enter Option"/>
+					<s:Spacer width="25"/>
+					<s:Button label="Add Option" click="button1_clickHandler(event)"/>
+					<s:Button label="Reset Option" click="button2_clickHandler(event)"/>
+				</s:Group>
+			</s:Group>
+		</s:Group>
+		<s:Button id="submit" left="10" bottom="10" width="130" height="30"
+				  label="Submit" click="goButton_clickHandler(event)"/>
+		<s:Button id="Cancel" right="10" bottom="10" width="130" height="30" label="Cancel"
+				  click="Cancel_clickHandler(event)"/>
+	<s:RadioButton id="sub" label="Subjective" click="radiobutton1_clickHandler(event)"
+				   groupName="opt" color="black"
+				   x="10" y="33"/>
+	<s:RadioButton id="obj" label="Objective" click="radiobutton2_clickHandler(event)"
+				   color="black" groupName="opt" selected="true"
+				   x="110" y="33"/>
+</s:TitleWindow>

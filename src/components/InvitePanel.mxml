@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="300" height="140"
+		 initialize="invitePanel_initializeHandler(event)" implements="interfaces.IpopUp">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+		
+		
+		
+	</fx:Declarations>
+	
+	<fx:Metadata>
+		
+		[Event(name=ON_GO_TO_PRIVATE_CHAT, type="flash.events.Event")]
+		[Event(name=ON_STAY_IN_LOBBY, type="flash.events.Event")]
+		
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			public const ON_GO_TO_PRIVATE_CHAT:String = "onGoToPrivateChat";
+			public const ON_STAY_IN_LOBBY:String = "onStayInLobby";
+			
+			[Bindable]
+			public var invitingUserName:String;
+			
+			protected function goButton_clickHandler(event:MouseEvent):void{
+				var goEvent:Event = new Event(ON_GO_TO_PRIVATE_CHAT);
+				dispatchEvent(goEvent);
+			}
+			
+			protected function stayButton_clickHandler(event:MouseEvent):void{
+				var stayEvent:Event = new Event(ON_STAY_IN_LOBBY);
+				dispatchEvent(stayEvent);
+			}
+			
+			protected function invitePanel_initializeHandler(event:FlexEvent):void{
+				messageText.text = "You've been invited to a private chat by " + invitingUserName + ", would you like to go to it or stay in the lobby?"
+			}
+			
+			public function closeWindow():void
+			{
+				PopUpManager.removePopUp(this);
+			}
+			
+		]]>
+	</fx:Script>
+	
+	
+	<s:Panel x="0" y="0" width="300" height="140" fontFamily="Arial"
+			 title="Private Chat Invite Notification">
+		<s:Label id="messageText" x="10" y="10" width="278" height="50" fontSize="14"/>
+		<s:Button id="goButton" y="65" left="10" width="130" height="30" label="Go to Private Chat"
+				  click="goButton_clickHandler(event)" fontFamily="Arial"/>
+		<s:Button id="stayButton" y="66" right="10" width="130" height="30" label="Stay in Lobby" click="stayButton_clickHandler(event)"/>
+	</s:Panel>
+</s:Group>

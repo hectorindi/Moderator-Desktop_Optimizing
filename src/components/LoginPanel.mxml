@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="400" height="200">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Metadata>
+		[Event(name="login", type="events.LoginEvent")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			
+			import events.LoginEvent;
+			
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+			
+			import spark.events.IndexChangeEvent;
+			
+			//keep the state so the user can't try to login more than once at a time
+			private var _loggingIn:Boolean = false;
+			
+			private function login():void{
+				if(_loggingIn == false){
+					_loggingIn = true;
+					setStatusText("Logging in, please wait...");
+					var eventObj:LoginEvent = new LoginEvent("login");
+					eventObj.userName = userNameTextInput.text;
+					eventObj.showID = showID.text;
+					eventObj.roleSelected=role.selectedItem.value;
+					
+					if(eventObj.showID && eventObj.roleSelected)
+					{
+						AppManager.getInstance().showID = parseInt(showID.text);
+						dispatchEvent(eventObj);
+					}
+					else
+					{
+						Alert.show("Something is missing! Please try again.")
+					}
+				}else{
+					Alert.show("Trying to log in right now, hang on a sec");
+				}
+			}
+			
+			protected function userNameTextInput_enterHandler(event:FlexEvent):void{
+				if(role.selectedIndex == 1 || role.selectedIndex == 0)
+				{
+					if(showID.text != "")
+						login();
+					else
+						Alert.show("You must enter a valid Show ID to login");
+				}
+				else if(userNameTextInput.text != "" && userNameTextInput.text != "User Name") 
+				{
+					login();
+				}
+				else
+				{
+					Alert.show("You must enter in a proper user name to login");
+				}
+			}
+			
+			protected function loginButton_clickHandler(event:MouseEvent):void{
+				if(role.selectedIndex == 1 || role.selectedIndex == 0)
+				{
+					if(showID.text != "")
+						login();
+					else
+						Alert.show("You must enter a valid Show ID to login");
+				}
+				else if(userNameTextInput.text != "" && userNameTextInput.text != "User Name") 
+				{
+					login();
+				}
+				else
+				{
+					Alert.show("You must enter in a proper user name to login");
+				}
+			}
+			
+			public function resetStatus():void{
+				stateText.text = "";
+				userNameTextInput.text = "";
+				showID.text = "";
+				_loggingIn = false;
+			}
+			
+			public function setStatusText(status:String):void{
+				stateText.text = status;
+			}
+			
+			protected function userNameTextInput_focusInHandler(event:FocusEvent):void{
+				if(userNameTextInput.text == "User Name"){
+					userNameTextInput.text = "";
+				}
+				
+			}
+			
+			protected function role_changeHandler(event:IndexChangeEvent):void
+			{
+				if(role.selectedIndex == 1 || role.selectedIndex == 0)
+				{
+					userNameTextInput.visible = false;
+					userNameTextInput.includeInLayout = false;
+				}
+				else
+				{
+					userNameTextInput.visible = true;
+					userNameTextInput.includeInLayout = true;
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:Panel x="0" y="0" width="400" height="200" title="Login">
+		<s:layout>
+			<s:HorizontalLayout horizontalAlign="center" verticalAlign="middle"/>
+		</s:layout>
+		<s:VGroup horizontalAlign="center" verticalAlign="middle">
+			<s:ComboBox id="role" width="146" change="role_changeHandler(event)" selectedIndex="0"
+						>
+				<s:dataProvider>
+					<s:ArrayCollection>
+						<fx:Object value="MOD1" label="Moderator 1"/>
+						<fx:Object value="MOD2" label="Moderator 2"/>
+					</s:ArrayCollection>
+				</s:dataProvider>
+			</s:ComboBox>
+			<s:TextInput id="userNameTextInput" width="146" enter="userNameTextInput_enterHandler(event)" includeInLayout="false" visible="false"
+						 focusIn="userNameTextInput_focusInHandler(event)" prompt="User Name"
+						 skinClass="skins.CustomTextInputSkin"/>
+			<s:TextInput id="showID" width="146" displayAsPassword="true"
+						 prompt="Show ID" skinClass="skins.CustomTextInputSkin" enter="userNameTextInput_enterHandler(event)"/>
+			<s:Button id="loginButton" bottom="50" label="Login" click="loginButton_clickHandler(event)"
+					  horizontalCenter="0"/>
+			<s:Label id="stateText" width="350"/>
+		</s:VGroup>
+	</s:Panel>
+	
+</s:Group>

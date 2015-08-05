@@ -1,0 +1,676 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 width="100%" height="100%"
+		 xmlns:components="components.*"
+		 creationComplete="group1_creationCompleteHandler(event)">
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionClient;
+			import com.encast.NetConnectionManager;
+			import com.encast.WowzaCustomEvent;
+			
+			import mx.collections.ArrayCollection;
+			import mx.events.DragEvent;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			import spark.collections.Sort;
+			import spark.collections.SortField;
+			import spark.components.supportClasses.ItemRenderer;
+			import spark.layouts.supportClasses.DropLocation;
+			
+			import valueObjects.User;
+			
+			private var _nc:NetConnectionManager;
+			private var _so:SharedObject;
+			
+			[Bindable]
+			private var _userListDP:ArrayCollection;
+			
+			private var _userID:Number;
+			
+			private var _inviting:Boolean = false;
+			private var _beingInvited:Boolean = false;
+			
+			public var lobby:AdminLobby;
+			
+			[Bindable]
+			private var title:String = "User List          ";
+			[Bindable]
+			private var noOfshowUsers:String = "0/24";
+			
+			private var startPos:int = -1;
+			private var endPos:int = -1;
+			private var dragCanceled:Boolean = false;
+			private var _showUsers:ArrayCollection = new ArrayCollection();
+			
+			public function initializeUserList(nc:NetConnectionManager):void{
+				_nc = nc;
+				_userID = AppManager.getInstance().userID;
+				//connect to the shared object
+				_so = SharedObject.getRemote("users", _nc.uri, false);
+				_so.addEventListener(SyncEvent.SYNC, onSync);
+				_so.client = this;
+				_so.connect(_nc);
+				
+				_userListDP = new ArrayCollection();
+			
+				userList._userID = _userID;
+				userList._userList = this;
+				userList.addEventListener("openModWindow",onOpenModWindow);
+				userList.addEventListener("updateListLabel",updateListlabel);
+			}
+			
+			private function updateListlabel(e:Event):void
+			{
+				updateShowUSersLable();
+			}
+			
+			public function setprivateChat(userInfo:Object):void
+			{
+				for(var j:int = 0; j < _userListDP.length; j++){
+					if(_userListDP.getItemAt(j).userID == userInfo.userID){
+						_userListDP.getItemAt(j).inPrivateChat = true;
+						_userListDP.getItemAt(j).withUserID = userInfo.withUserID;
+					}
+					if(_userListDP.getItemAt(j).userID == userInfo.withUserID){
+						_userListDP.getItemAt(j).inPrivateChat = true;
+						_userListDP.getItemAt(j).withUserID = userInfo.userID;
+					}
+				}
+				_userListDP.refresh();
+			}
+			
+			/* public function getSelectedUser():User{
+				var selectedUserName:User;
+				if(userList.selectedIndex != -1){
+					selectedUserName = new User(userList.selectedItem);
+				}
+				
+				return selectedUserName;
+			} */
+			
+			public function getUserbyid(id:String):User{
+				var user:User;
+				var dp:ArrayCollection = _userListDP;
+				for (var i:int=0;i<dp.length;i++)
+				{
+					var item:Object = dp.getItemAt(i);
+					if(item.userId == id)
+					{
+						user = new User(item);
+					}
+				}
+				
+				return user;
+			}
+			
+			public function getUserbyidAsObject(id:String):Object{
+				var user:Object;
+				var dp:ArrayCollection = _userListDP;
+				for (var i:int=0;i<dp.length;i++)
+				{
+					var item:Object = dp.getItemAt(i);
+					if(item.userId == id)
+					{
+						user = item;
+					}
+				}
+				return user;
+			}
+			
+			
+			private function onSync(e:SyncEvent):void{				
+				for(var i:Object in _so.data)
+				{
+					//put all the users in the list
+					var userInfo:Object = _so.data[i] as Object;
+					
+					var showUsers:Array = AppManager.getInstance().ShowUserArray;
+					
+					if(_so.data[i].userRole != 1)
+					{
+						
+					}
+					else
+					{
+						var index:int = _userListDP.getItemIndex(userInfo);
+						if(index == -1)
+						{
+							
+							var _showUserArray:Array = AppManager.getInstance().ShowUserArray;
+							
+							for(var j:int=0;j<_showUserArray.length;j++)
+							{
+								if(_showUserArray[j] == userInfo.userId)
+								{
+									userInfo.showPos = j+1;
+									_showUsers.addItem(userInfo);
+								}
+							}
+							
+							_userListDP.addItem(userInfo);
+							userList.dataProvider = _userListDP;
+						}
+					}
+					//AppManager.getInstance().log("Pos is : "+userInfo.pos + " AppManager.getInstance().userName : "+AppManager.getInstance().userName+" userInfo.isActive : "+userInfo.isActive+ " userInfo.userName : "+userInfo.userName);
+				}
+				
+				var dataSortField:spark.collections.SortField = new spark.collections.SortField();
+				dataSortField.name = "showPos";
+				dataSortField.numeric = true;
+				
+				/* Create the Sort object and add the SortField object created earlier to the array of fields to sort on. */
+				var numericDataSort:spark.collections.Sort = new spark.collections.Sort();
+				numericDataSort.fields = [dataSortField];
+				
+				/* Set the ArrayCollection object's sort property to our custom sort, and refresh the ArrayCollection. */
+				_showUsers.sort = numericDataSort;
+				_showUsers.refresh();
+				
+				//remove the onSync, it's inefficient in my opinion
+				if(AppManager.getInstance().ShowUserArray.length > 0)
+				{
+					updateShowUSersLable();
+				}
+				_so.removeEventListener(SyncEvent.SYNC, onSync);
+				
+				_userListDP.refresh();
+				
+				 for(var k:int=0;k<_showUsers.length;k++)
+				{
+					var indexes:int = _userListDP.getItemIndex(_showUsers[k]);
+					var user:Object = _userListDP.removeItemAt(indexes);
+				} 
+				 
+				 for(var counts:int=_showUsers.length-1;counts>=0;counts--)
+				 {
+					 _userListDP.addItemAt(_showUsers[counts],0);
+				 } 
+				
+				 for(var first:int=0;first<_userListDP.length;first++)
+				 {
+					 var userO:Object = _userListDP[first];
+					if(userO.hasOwnProperty("showPos"))
+					{
+						if(userO.showPos > 0)
+						{
+							
+						}
+						else
+						{
+							var eventObj:Object = new Object()
+							eventObj.user = userO;
+							var eve:Event = new WowzaCustomEvent("sendToscreening",true,true,eventObj);
+							dispatchEvent(eve);
+						}
+					}
+					else
+					{
+						var eventObj1:Object = new Object()
+						eventObj1.user = userO;
+						var eve1:Event = new WowzaCustomEvent("sendToscreening",true,true,eventObj1);
+						dispatchEvent(eve1);
+
+					}
+				 }
+				 
+				 _userListDP.refresh();
+				
+				userList.dataProvider = _userListDP;
+				dispatchEvent(new Event("listSyncd",true,true));
+			}
+			
+			public function addUser(userInfo:Object,showUserArray:Array):void{
+				
+				//add this user into the list
+				var posInfo:Object = new Object();
+				
+				var _showUserArray:Array = showUserArray;
+				
+				AppManager.getInstance().ShowUserArray = _showUserArray;
+				
+				var actualUsers:int = 0;
+				
+				for(var conts:int=0;conts<_showUserArray.length;conts++)
+				{
+					if(_showUserArray[conts] != "default")
+					{
+						actualUsers = actualUsers+1;
+					}
+				}
+				
+				AppManager.getInstance().showArrPos = actualUsers;
+				
+				//AppManager.getInstance().log("Presenter array : "+presenters);
+				
+				for(var j:int=0;j<_showUserArray.length;j++)
+				{
+					if(_showUserArray[j] == userInfo.userId)
+					{
+						userInfo.showPos = j;
+					}
+				}
+				
+				if(_userListDP != null)
+				{
+					if(userInfo.hasOwnProperty("userRole"))
+					{
+						if(userInfo.userRole != 1)
+						{
+							if(userInfo)
+							{
+								if(userInfo.userRole == 0)
+								{
+									var userInfoNew:Object = userInfo;
+									userInfoNew.role = 1;
+									var index:int = _userListDP.getItemIndex(userInfo);
+									if(index == -1)
+									{
+										_userListDP.addItem(userInfoNew);
+									}
+								}
+							}
+						}
+						else
+						{	
+							updateShowUSersLable();
+							_userListDP.addItem(userInfo);
+							var eventObj:Object = new Object();
+							eventObj.user = userInfo;
+							var eve:Event = new WowzaCustomEvent("sendToscreening",true,true,eventObj);
+							dispatchEvent(eve);
+						}
+					}
+					else if(userInfo)
+					{
+						if(userInfo.userRole == 1)
+						{
+							var userInfoNew2:Object = userInfo;
+							userInfoNew2.role = 1;
+							updateShowUSersLable();
+							_userListDP.addItem(userInfoNew2);
+							var eventObj2:Object = new Object();
+							eventObj2.user = userInfoNew2;
+							var eve2:Event = new WowzaCustomEvent("sendToscreening",true,true,eventObj2);
+							dispatchEvent(eve2);
+						}
+					}
+				}
+			}
+			
+			public function removeUser(userID:Number,showUserArray:Array):void
+			{
+				if(_userListDP != null)
+				{
+					for(var j:int = 0; j < _userListDP.length; j++)
+					{
+						//AppManager.getInstance().log("removing user from server call : "+ userID+" and array is : "+showUserArray.toString());
+						//AppManager.getInstance().log("AppManager.getInstance().ShowUserArray now is  : "+ AppManager.getInstance().ShowUserArray.toString());
+						if(_userListDP.getItemAt(j).inPrivateChat)
+						{
+							if(userID == _userListDP.getItemAt(j).userID || _userListDP.getItemAt(j).withUserID)
+							{
+								dispatchEvent(new Event("removeChatUser",true,true));
+							}
+						}
+						
+						if(_userListDP.getItemAt(j).userId == userID)
+						{
+							var arr:Array = AppManager.getInstance().ShowUserArray;
+							
+							for(var k:int=0;k<arr.length;k++)
+							{
+								if(_userListDP.getItemAt(j).userId == arr[k])
+								{
+									var tempObj:Object = new Object();
+									tempObj.user = _userListDP.getItemAt(j);
+									tempObj.array = showUserArray;
+									dispatchEvent(new WowzaCustomEvent(NetConnectionClient.ON_REMOVE_USER,true,true,tempObj));	
+								}
+							}
+							
+							if(showUserArray)
+							{
+								AppManager.getInstance().ShowUserArray = new Array();
+								AppManager.getInstance().ShowUserArray = showUserArray;
+							}
+							
+							var actualUsers:int = 0;
+							
+							for(var conts:int=0;conts<showUserArray.length;conts++)
+							{
+								if(showUserArray[conts] != "default")
+								{
+									actualUsers = actualUsers+1;
+								}
+							}
+							
+							AppManager.getInstance().showArrPos = actualUsers;
+							
+							updateShowUSersLable();
+							var eventObj:Object = new Object();
+							eventObj.user = _userListDP.getItemAt(j);;
+							_userListDP.removeItemAt(j);
+							var eve:Event = new WowzaCustomEvent("removeFromScreening",true,true,eventObj);
+							dispatchEvent(eve);
+							//userList.dataProvider = _userListDP;
+							break;
+						}
+					}
+					userList.dataProvider = _userListDP;
+				}
+			}
+
+			
+			public function inviteButton_clickHandler(event:MouseEvent):void{
+				var invite:InviteUser = new InviteUser();
+				invite.lobbyVar = this.lobby;
+				PopUpManager.addPopUp(invite,this.parent.parent.parent,true);
+				PopUpManager.centerPopUp(invite);
+				invite.addEventListener(Event.CLOSE , onCloseInvite);
+			}
+			
+			
+			public function ChatButton_clickHandler(event:MouseEvent):void
+			{
+				if(_inviting == true)
+				{
+					_nc.call("cancelInvite", null, _userID);
+					_inviting = false;
+				}
+				else
+				{
+					if(userList.selectedIndex != -1)
+					{
+						var selectedUser:Number = userList.selectedItem.userserID;
+						_nc.call("inviteUser", null, _userID, selectedUser);
+						userList.selectedIndex = -1;
+						_inviting = true;
+					}
+					else
+					{
+					
+					}
+				}	
+			}
+			
+			private function onCloseInvite(e:Event):void
+			{
+				var panel:InviteUser = e.currentTarget as InviteUser;
+				PopUpManager.removePopUp(panel);
+			}
+			
+			public function setInvitedValue(isInvited:Boolean):void{
+				if(isInvited == true){
+					_beingInvited = true;
+				}
+			}
+			
+			public function resetUsers(infoObj:Object):void
+			{
+				 for(var j:int = 0; j < _userListDP.length; j++)
+				 {
+					var currentID:int = _userListDP.getItemAt(j).userID;
+					if(_userListDP.getItemAt(j).inPrivateChat == true && (currentID == infoObj.userID || currentID == infoObj.withUserID))
+					{
+						_userListDP.getItemAt(j).withUserID = 0;
+						_userListDP.getItemAt(j).inPrivateChat = false;
+						var obj:Object = _userListDP.getItemAt(j).data
+						if(!(obj.hasOwnProperty("userName")))
+							{
+								_userListDP.removeItemAt(j);
+							}
+					}
+				} 
+				 updateShowUSersLable();
+				 _userListDP.refresh(); 
+			}
+			
+			public function get userId():Number
+			{
+				return _userID;
+			}
+					
+			
+			protected function userListHandler(event:FlexEvent):void
+			{
+				userList._userID = _userID;
+				userList._userList = this;
+				userList.addEventListener("openModWindow",onOpenModWindow);
+				userList.addEventListener("updateListLabel",updateShowUSersLable);
+			}
+			
+			private function onOpenModWindow(e:WowzaCustomEvent):void
+			{
+				var eve:Event = new WowzaCustomEvent("openModWindow",true,true);
+				dispatchEvent(eve);
+			}
+			
+			public function resetActivePresenter(action:String,removeUser:String = ""):void
+			{
+				
+				for(var j:int = 0; j < _userListDP.length; j++)
+				{					
+					var userName:String = _userListDP.getItemAt(j).userName;
+					
+					var showUserArray:Array = AppManager.getInstance().ShowUserArray;
+					
+					if(action == "remove")
+					{
+						for(var i:int=0;i<showUserArray.length;i++)
+						{
+							if(showUserArray[i] == "default" && userName == removeUser)
+							{
+								_userListDP.getItemAt(j).pos = 0;
+							}
+						}
+					}
+					else if(action == "add")
+					{
+						for(var k:int=0;k<showUserArray.length;k++)
+						{
+							if(showUserArray[k] == userName)
+							{
+								_userListDP.getItemAt(j).pos = k+1;
+							}
+						}
+					}
+				} 
+				updateShowUSersLable();
+				_userListDP.refresh(); 
+			}
+			
+			protected function moveToShowBtn_clickHandler(event:MouseEvent):void
+			{
+				var index:int = moveToShowCombo.selectedIndex;
+				if(index != -1)
+				{
+					userList._showUsers = moveToShowCombo.selectedItem.value;
+					var eventObj:Object = new Object();
+					eventObj.no = userList._showUsers;
+					var eve:Event = new WowzaCustomEvent("sendToShow",true,true,eventObj);
+					dispatchEvent(eve);
+				}
+			}
+			
+			protected function userList_dragCompleteHandler(event:DragEvent):void
+			{
+				var object:Object = userList.selectedItem as Object;
+				var showPos: int = -1;
+				showPos = object.showPos;
+				endPos = userList.selectedIndex;
+				
+				if(object.hasOwnProperty("showPos") && dragCanceled == false)
+				{
+					if(showPos <= 0 && endPos != -1)
+					{
+						var eventObj:Object = new Object();
+						eventObj.startPos = startPos;
+						eventObj.endPos = endPos;
+						AppManager.getInstance().log("Drag strat and end : "+startPos+" and end is : "+endPos);
+						var eve:Event = new WowzaCustomEvent("screeningOrderChanged",true,true,eventObj);
+						dispatchEvent(eve);
+					}
+					else
+					{
+						event.preventDefault();
+						event.stopImmediatePropagation();
+						event.stopPropagation();
+					}
+				}
+				else if( dragCanceled == false)
+				{
+					endPos = userList.selectedIndex;
+					var eventObj1:Object = new Object();
+					eventObj1.startPos = startPos;
+					eventObj1.endPos = endPos;
+					var eve1:Event;
+					var showUsers:int =  AppManager.getInstance().showArrPos -1;
+					if(AppManager.getInstance().showArrPos > 0)
+					{
+						if(endPos <= showUsers)
+						{
+							event.preventDefault();
+						}
+						else if(endPos != -1)
+						{
+							eve1 = new WowzaCustomEvent("screeningOrderChanged",true,true,eventObj1);
+							dispatchEvent(eve1);
+						}
+					}
+					else if(endPos != -1)
+					{
+						eve1 = new WowzaCustomEvent("screeningOrderChanged",true,true,eventObj1);
+						dispatchEvent(eve1);
+					}
+				}
+				
+				var dp:ArrayCollection = userList.dataProvider as ArrayCollection;
+				userList.dataProvider = null;
+				userList.dataProvider = dp;
+				
+				userList.invalidateDisplayList();
+			}
+			
+			public function updateDP():void
+			{
+				var dp:ArrayCollection = userList.dataProvider as ArrayCollection;
+				userList.dataProvider = null;
+				userList.dataProvider = dp;
+				
+				userList.invalidateDisplayList();
+			}
+			
+			protected function userList_dragStartHandler(event:DragEvent):void
+			{
+				dragCanceled = false;
+				var object:Object = userList.selectedItem as Object;
+				var showPos: int = -1;
+				showPos = object.showPos;
+				
+				if(object.hasOwnProperty("showPos"))
+				{
+					if(showPos <= 0)
+					{
+						startPos = userList.selectedIndex;
+					}
+					else
+					{
+						event.preventDefault();
+						dragCanceled = true;
+					}
+				}
+				else
+				{
+					startPos = userList.selectedIndex;
+				}
+				
+			}
+			
+			protected function userList_dragDropHandler(event:DragEvent):void
+			{
+				var dl:DropLocation = userList.layout.calculateDropLocation(event);
+				var dropIndex:int = dl.dropIndex;
+				
+				var endPos:int = dropIndex;
+				var eventObj1:Object = new Object();
+				var eve1:Event;
+				var showUsers:int =  AppManager.getInstance().showArrPos -1;
+				if(AppManager.getInstance().showArrPos > 0)
+				{
+					if(endPos <= showUsers)
+					{
+						endPos = -1;
+						event.preventDefault();
+						event.stopImmediatePropagation();
+						event.stopPropagation();
+						dragCanceled = true;
+					}
+				}
+			}
+			
+			public function updateShowUSersLable():void
+			{
+				noOfshowUsers = AppManager.getInstance().showArrPos+"/24";
+			}
+			
+			protected function group1_creationCompleteHandler(event:FlexEvent):void
+			{
+				
+			}
+			
+			public function get userListDP():ArrayCollection
+			{
+				return _userListDP;
+			}
+			
+			public function get showUsers():ArrayCollection
+			{
+				return _showUsers;
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:Panel id="userlistPod" width="100%" height="100%" title="{title+noOfshowUsers}">
+		<s:Group width="100%">
+			<s:layout>
+				<s:HorizontalLayout verticalAlign="middle" horizontalAlign="center" paddingBottom="5" paddingTop="5" paddingRight="5" paddingLeft="5"/>
+			</s:layout>
+			<s:ComboBox id="moveToShowCombo" prompt="Select users">
+				<s:dataProvider>
+					<s:ArrayCollection>
+						<fx:Object value="2" label="2"/>
+						<fx:Object value="4" label="4"/>
+						<fx:Object value="8" label="8"/>
+						<fx:Object value="16" label="16"/>
+						<fx:Object value="24" label="24"/>
+					</s:ArrayCollection>
+				</s:dataProvider>
+			</s:ComboBox>
+			<s:Spacer width="100%"/>
+			<s:Button id="moveToShowBtn" label="Go" click="moveToShowBtn_clickHandler(event)"/>
+		</s:Group>
+		<components:CustomList dragEnabled="true" 
+							   dropEnabled="true" 
+							   allowMultipleSelection="false"
+							   dragMoveEnabled="true"
+							   left="0" top="30" width="100%" 
+							   height="100%" id="userList" 
+							   itemRenderer="rendereres.UserListRenderer" 
+							   color="0x000000"
+							   dragComplete="userList_dragCompleteHandler(event)"
+							   dragStart="userList_dragStartHandler(event)"
+							   dragDrop="userList_dragDropHandler(event)"/>
+		
+	</s:Panel>
+	
+</s:Group>

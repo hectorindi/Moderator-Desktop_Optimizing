@@ -1,0 +1,777 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   xmlns:components="components.*"
+					   initialize="basicPrivateChat_initializeHandler(event)" 
+					   creationComplete="application1_creationCompleteHandler(event)" >
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	<fx:Style source="BasicPrivateChat_v4Styles.css"/>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here --> 
+	</fx:Declarations>
+	<fx:Metadata>
+		[Event(name="login", type="events.LoginEvent")]
+	</fx:Metadata>
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.ConnectionProperties;
+			import com.encast.NetConnectionClient;
+			import com.encast.NetConnectionManager;
+			import com.encast.UserRole;
+			import com.encast.WowzaCustomEvent;
+			
+			import flash.net.ObjectEncoding;
+			import flash.net.URLLoader;
+			import flash.net.URLLoaderDataFormat;
+			import flash.net.URLRequest;
+			import flash.utils.getQualifiedClassName;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.core.FlexGlobals;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			import mx.managers.PopUpManagerChildList;
+			import mx.rpc.events.FaultEvent;
+			import mx.rpc.events.ResultEvent;
+			
+			import components.PrivateChat;
+			
+			import events.LoginEvent;
+			
+			import interfaces.IpopUp;
+			
+			import valueObjects.User;
+			
+			private var _nc:NetConnectionManager;
+			private var _ncClient:NetConnectionClient;
+			private var _connectionProps:ConnectionProperties;
+			private var _userID:Number;
+			private var _userName:String;
+			private var _isPresenter:Boolean;
+			
+			private var _goToPrivateChat:Boolean = false;
+			private var _privateRoomName:String = "";
+			
+			private var _privateChatHistory:Array;
+			private var _privateChat:PrivateChat;
+			private var _userRole:int = 0;
+			private var _sessionUser:Object;
+			
+			//these are to keep track what is happening with the connection
+			private var _connectionIsRejected:Boolean = false;
+			private var _connectionHasFailed:Boolean = false;
+			private var _hasClosedConnection:Boolean = false;
+			
+			protected function basicPrivateChat_initializeHandler(event:FlexEvent):void{
+				_connectionProps = new ConnectionProperties();	
+			}
+			
+			private function login(user:Object):void{
+				_nc = new NetConnectionManager();
+				_nc.objectEncoding = ObjectEncoding.AMF0;
+				_nc.addEventListener("onConnect", onConnect);
+				_nc.addEventListener("onFailed", onFailed);
+				_nc.addEventListener("onClosed", onClosed);
+				_nc.addEventListener("onRejected", onRejected);
+				_nc.addEventListener(ErrorEvent.ERROR, onError);
+				_nc.addEventListener(NetStatusEvent.NET_STATUS,onStatus);
+				_ncClient = new NetConnectionClient();
+				_ncClient.addEventListener(NetConnectionClient.ON_USERID, onSetUserID);				
+				_ncClient.addEventListener(NetConnectionClient.ON_RECEIVE_INVITE, onReceiveInvite);
+				_ncClient.addEventListener(NetConnectionClient.ON_ACCEPT_INVITE, onAcceptInvite);
+				_ncClient.addEventListener(NetConnectionClient.ON_DENY_INVITE, onDenyInvite);
+				_ncClient.addEventListener(NetConnectionClient.ON_CANCEL_INVITE, onCancelInvite);
+				_ncClient.addEventListener(NetConnectionClient.ON_INVITED_USER_LOGOFF, onInvitedUserLogoff);
+				
+				_ncClient.addEventListener(NetConnectionClient.ON_KICKED, onKicked);
+				_ncClient.addEventListener(NetConnectionClient.ON_BANNED, onBanned);
+				_ncClient.addEventListener(NetConnectionClient.ON_BANNED_USERS_LIST, onBannedUsersList);
+				_ncClient.addEventListener(NetConnectionClient.ON_CLOSE_PRIVATE_CHAT, closePrivateChat);
+				_ncClient.addEventListener(NetConnectionClient.ON_PRIVATE_CHAT, onPrivateChat);
+				_ncClient.addEventListener(NetConnectionClient.ON_REFRESH_USERS, onUserRefresh);
+				_ncClient.addEventListener(NetConnectionClient.ON_MOVE_USER_TO_GREEN_ROOM, onMoveUserToGreenRoom);
+				_ncClient.addEventListener(NetConnectionClient.ON_MOVE_USER_TO_SHOW_REPLY, onMoveUserToShow);
+				
+				_ncClient.addEventListener(NetConnectionClient.ON_CLOSE_PRIVATE_VID_CHAT, onClosePrivateVidChat);
+				_ncClient.addEventListener(NetConnectionClient.ON_UPDATE_USER, onUpdateUser);
+				_ncClient.addEventListener(NetConnectionClient.ON_REMOVE_USER, onRemoveUser);
+				_ncClient.addEventListener("setAutomaticShift", onUpdateAutomaticShift);
+				_ncClient.addEventListener("activateAutomaticShift", onActivateAutomaticShift);
+				_ncClient.addEventListener("activateReplyAutomaticShift", onActivateReplyAutomaticShift);
+				_ncClient.addEventListener("onDisablePoll", onDisablePoll);
+				
+				_nc.client = _ncClient;
+				AppManager.getInstance().log("rtmp://" + _connectionProps.getServerIP() + "/" + _connectionProps.getApplicationName() + "/" + _connectionProps.getInstanceName());
+				_nc.connect("rtmp://" + _connectionProps.getIntranetIP() + "/" + _connectionProps.getApplicationName() + "/" + _connectionProps.getInstanceName(), _sessionUser);
+				trace("LOGIING "+"rtmp://" + _connectionProps.getIntranetIP() + "/" + _connectionProps.getApplicationName() + "/" + _connectionProps.getInstanceName())
+				//getShowID(user);
+			}
+			
+			public function getShowID(user:Object):void
+			{
+				var loginService:URLRequest = new URLRequest("checkShow.asp");
+				var loginServiceLoader:URLLoader = new URLLoader(loginService);
+				loginServiceLoader.dataFormat = URLLoaderDataFormat.VARIABLES;
+				loginServiceLoader.addEventListener(Event.COMPLETE, wsLoadCompleteError);
+				loginServiceLoader.load(loginService);   
+			}
+			
+			private function wsLoadComplete(e:Event):void
+			{
+				var showDetails:Object = e.target.data;
+				if(showDetails != null)
+				{
+					//var showid:String = showDetails.show_id;
+					var showid:String = "3";
+					//var instaceName:String =  showDetails.application_id;
+					var instaceName:String =  "VA1";
+					_connectionProps.setInstanceName(instaceName);
+					AppManager.getInstance().log("rtmp://" + _connectionProps.getServerIP()() + "/" + _connectionProps.getApplicationName() + "/" + _connectionProps.getInstanceName());
+					_nc.connect("rtmp://" + _connectionProps.getIntranetIP() + "/" + _connectionProps.getApplicationName() + "/" + _connectionProps.getInstanceName(), _sessionUser);
+				}
+				else
+				{
+					var newVrl1:String = "http://www.myxph.com/via/";
+					//navigateToURL(new URLRequest(newVrl1), "_self");
+					_hasClosedConnection = true;
+					_nc.close();
+					
+					adminLobby.visible = false;
+					adminLobby.includeInLayout = false;
+					
+					loginPanel.visible = true;
+					loginPanel.includeInLayout = true;
+					loginPanel.resetStatus();
+					loginPanel.setStatusText("Something went Wrong!!! Please Close the application and log-in again! load complete");
+				}
+			}
+			
+			private function wsLoadCompleteError(e:Event):void
+			{
+				AppManager.getInstance().log("loading show manager webservice faild")
+			}
+			
+			private function onConnect(event:NetStatusEvent):void{
+				
+			}
+			
+			private function onError(event:Error):void
+			{
+				
+			}
+			
+			private function onStatus(event:NetStatusEvent):void
+			{
+				
+			}
+			
+			private function onClosed(event:NetStatusEvent):void{
+				if(_connectionHasFailed != true && _connectionIsRejected != true && _hasClosedConnection != true || _goToPrivateChat != true){
+					//show that the connection died for whatever reason (network issue probably)	
+					AppManager.getInstance().ShowUserArray=null;
+					AppManager.getInstance().showArrPos=-1;
+					AppManager.getInstance().userID=0;
+					AppManager.getInstance().userName="";
+					AppManager.getInstance().userRole=0; 
+					
+					//AppManager.getInstance().log("Connection closed on MOd");
+					
+					var eve:WowzaCustomEvent = new WowzaCustomEvent("streamStop",true,true);
+					
+					//stop all video pods here
+					
+					closeAllWindows();
+				}
+				
+				var url:String = FlexGlobals.topLevelApplication.url;
+				var newVrl:String = url.replace(".swf",".html");
+				AppManager.getInstance().log("Connection closed on Mod");
+				//var newVrl:String = "http://192.168.2.155/collab/collaboration.html"
+				//navigateToURL(new URLRequest(newVrl),"_self"); 
+				
+				_hasClosedConnection = true;
+				_nc.close();
+				
+				adminLobby.visible = false;
+				adminLobby.includeInLayout = false;
+				
+				loginPanel.visible = true;
+				loginPanel.includeInLayout = true;
+				loginPanel.resetStatus();
+				loginPanel.setStatusText("Something went Wrong!!! Please Close the application and log-in again! Closed");
+				NativeApplication.nativeApplication.exit();
+	
+				//here again stop user videos and destroy mechenism
+			}
+			
+			private function onFailed(event:NetStatusEvent):void{
+				var eve:WowzaCustomEvent = new WowzaCustomEvent("streamStop",true,true);
+				
+				AppManager.getInstance().ShowUserArray=null;
+				AppManager.getInstance().showArrPos=-1;
+				AppManager.getInstance().userID=0;
+				AppManager.getInstance().userName="";
+				AppManager.getInstance().userRole=0;
+				AppManager.getInstance().log("Connection failed on Mod");
+				//reset videoPod
+				
+				closeAllWindows();
+				_connectionHasFailed = true;
+				
+				loginPanel.resetStatus();
+				loginPanel.setStatusText("The connection attempt has failed, please check your internet connection and try again");
+				
+				//reset k or stus enries
+				
+				// destroy videopods if neccesary
+				
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR1 || AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{
+					_connectionIsRejected = true;
+					var bannedReason:String = event.info.application;
+					
+					if(currentState == "LoginState" && bannedReason.match("Duplicate")){
+						loginPanel.resetStatus();
+						loginPanel.setStatusText("The User With This User Name is Already Login");
+					}
+					else if(currentState == "LoginState" && bannedReason.match("Wrong")){
+						loginPanel.resetStatus();
+						loginPanel.setStatusText("The Username or Password Is Not corrrect");
+					}
+						
+					else{
+						loginPanel.resetStatus();
+						loginPanel.setStatusText("The connection was rejected, please contact the chat administrator for more information");
+					}
+				}	
+				
+			}
+			
+			private function onRejected(event:NetStatusEvent):void{
+				_connectionIsRejected = true;
+				
+				// Notify user about why connection rejected
+				_connectionIsRejected = true;
+				var bannedReason:String = event.info.application;
+				AppManager.getInstance().log("Connection rejected on Mod"+bannedReason);
+				if(currentState == "LoginState" && bannedReason.search("Duplicate") != -1){
+					loginPanel.resetStatus();
+					loginPanel.setStatusText("The User With This User Name is Already Login");
+				}
+				else if(currentState == "LoginState" && bannedReason.match("Wrong")){
+					loginPanel.resetStatus();
+					loginPanel.setStatusText("The Username or Password Is Not corrrect");
+				}
+					
+				else{
+					loginPanel.resetStatus();
+					loginPanel.setStatusText("The connection was rejected, please contact the chat administrator for more information");
+				}
+				
+				AppManager.getInstance().ShowUserArray=null;
+				AppManager.getInstance().showArrPos=-1;
+				AppManager.getInstance().userID=0;
+				AppManager.getInstance().userName="";
+				AppManager.getInstance().userRole=0;
+				
+				/* var url:String = FlexGlobals.topLevelApplication.url;
+				var newVrl:String = url.replace(".swf",".html");
+				navigateToURL(new URLRequest(newVrl), "_parent"); */
+				
+				//ExternalInterface.call("reload"); 
+				
+				// destroy pods again here
+			}
+			
+			//this gets called when the server is ready for us
+			private function onSetUserID(event:WowzaCustomEvent):void{
+				
+				
+				adminLobby.visible = true;
+				adminLobby.includeInLayout = true;
+				
+				loginPanel.visible = false;
+				loginPanel.includeInLayout = false;
+				AppManager.getInstance()
+				
+				AppManager.getInstance().userID = _userID = event.eventObj.user.userId;
+				AppManager.getInstance().userName = _userName = event.eventObj.user.userName;
+				AppManager.getInstance().userRole = _userRole = event.eventObj.user.userRole;
+				AppManager.getInstance().ShowUserArray = event.eventObj.showUserArray;
+				var showUserArray:Array = event.eventObj.showUserArray;
+				
+				var actualUsers:int = 0;
+				
+				for(var conts:int=0;conts<showUserArray.length;conts++)
+				{
+					if(showUserArray[conts] != "default")
+					{
+						actualUsers = actualUsers+1;
+					}
+				}
+				
+				AppManager.getInstance().showArrPos = actualUsers;
+				
+				var chatHistory:Array = event.eventObj.chatHistory;
+				var queryHistory:Array=event.eventObj.queryHistory;
+				
+				if(_goToPrivateChat == false)
+				{
+					adminLobby.initializeLobby(_nc,chatHistory,queryHistory,_userRole) 
+				} 
+				else 
+				{
+					Alert.show("something just went wrong please reload the application"); 
+				}
+				
+				//adminLobby.initializeLobby(_nc,chatHistory,queryHistory,_userRole);
+			}
+			
+			public function onTitleClose(e:Event=null):void
+			{
+				//var title:PrivateChat = e.target as PrivateChat;
+				if(_privateChat != null)
+				{
+					PopUpManager.removePopUp(_privateChat);
+					//_privateChat.chatStopped();
+					_privateChat = null
+					adminLobby.onPrivateChatClosed(e)
+				}
+			}
+			
+			private function onKicked(event:WowzaCustomEvent):void{
+				//although they have to be in the lobby, put this in for future functionality
+				if(currentState == "LobbyState"){
+					//lobby.onKicked(event.eventObj.message);
+					//kick user
+				}
+			}
+			
+			private function onBanned(event:WowzaCustomEvent):void{
+				//lobby.showAdminMessage("You have been banned because: " + event.eventObj.message);
+				//ban user
+			}
+			
+			private function onBannedUsersList(event:WowzaCustomEvent):void{
+				adminLobby.showBannedUsers(event.eventObj.list);
+				//show banned user list
+			}
+			
+			//when we get the event from the netConnectionClient then we tell the lobby to do something about it
+			private function onReceiveInvite(e:WowzaCustomEvent):void{
+				//lobby.onReceiveInvite(e.eventObj.invitingUserName);
+				// recive invite to private chat
+			}
+			
+			private function onAcceptInvite(event:WowzaCustomEvent):void{
+				//set the new state of the application
+				_goToPrivateChat = true;
+				
+				_privateChat = new PrivateChat();
+				_privateChat.addEventListener("goBackToLobby",privateChat_goBackToLobbyHandler);
+				_privateChat.addEventListener(Event.CLOSE,onTitleClose);
+				PopUpManager.addPopUp(_privateChat,this,false,PopUpManagerChildList.POPUP);
+				PopUpManager.centerPopUp(_privateChat);
+				_privateChat.lobby = adminLobby;
+				//initialise private chat
+				var eventStr:String = event.eventObj.privateRoomName.toString();
+				var eventStrArr:Array = eventStr.split("privateRoom_user_");
+				var temparr:Array = eventStrArr[1].toString().split("_");
+				
+				var _toUserID:Number = Number(temparr[0]);
+				
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					_userID = 0;
+				}
+				
+				if(_toUserID == _userID)
+				{
+					_toUserID = Number(temparr[3]);
+				}
+				
+				_privateChat.initializePrivateChat(_nc, _userID, _userName, _toUserID,null);
+				//initialise private chat
+			}
+			
+			private function closeLobby():void{
+				//lobby.close();
+				//close lobby 
+			}
+			
+			//this is called from the server when the other user denied our invite
+			private function onDenyInvite(e:WowzaCustomEvent):void{
+				var user:Object = new Object();
+				user.userID = e.eventObj.userID;
+				adminLobby.onPrivateChatClosed(e)
+				//lobby.onDenyInvite(user);
+				//deny user invitetion					
+			}
+			
+			//this is called from the server when somebody cancelled the invite to us
+			private function onCancelInvite(e:Event):void{
+				//lobby.onCancelInvite();
+				//cancle invite
+			}
+			
+			//this is called from the server when the user we invited logged off
+			private function onInvitedUserLogoff(e:Event):void{
+				//lobby.onInvitedUserLogoff();
+				adminLobby.onPrivateChatClosed(e);
+			}
+			
+			protected function loginPanelLoginHandler(event:LoginEvent):void{
+				var user:Object = new Object();
+				user.userName = event.userName;
+				user.showID = event.showID;
+				user.roleSelected = event.roleSelected;
+				_sessionUser = user;
+				login(user);
+			}
+			
+			protected function lobby_logoutHandler(event:Event):void{
+				_hasClosedConnection = true;
+				_nc.close();
+				
+				adminLobby.visible = false;
+				adminLobby.includeInLayout = false;
+				
+				loginPanel.visible = true;
+				loginPanel.includeInLayout = true;
+				loginPanel.resetStatus();
+				NativeApplication.nativeApplication.exit();
+			}
+			
+			protected function privateChat_goBackToLobbyHandler(event:Event):void{
+				_hasClosedConnection = true;
+				_nc.close();
+				_goToPrivateChat = false;
+				
+				//reset the connection state variables
+				_connectionIsRejected = _connectionHasFailed = _hasClosedConnection = false;
+				
+				//connect to the lobby
+				_nc.connect("rtmp://" + _connectionProps.getServerIP() + "/" + _connectionProps.getApplicationName() + "/" + _connectionProps.getInstanceName(), _userName);
+			}
+			
+			protected function onUserRefresh(e:WowzaCustomEvent):void
+			{
+				//lobby.closePrivateChat(e.eventObj);
+				/* if(lobby.userlistPod != null)
+				{
+				lobby.userlistPod.resetUsers(e.eventObj);
+				} */
+				//refresh user list
+			}
+			
+			
+			protected function onClosePrivateVidChat(e:WowzaCustomEvent):void
+			{
+				var id:Number = Number(e.eventObj.info);
+				var id2:Number = Number(e.eventObj.info2);
+				adminLobby.closePrivateChatPanel(id,id2);
+			}
+			
+			protected function onMoveUserToGreenRoom(e:WowzaCustomEvent):void
+			{
+				var tempObj:Object = e.eventObj;				
+				if(tempObj.userID != null || tempObj.userID != "")
+				{
+					if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+					{
+						AppManager.getInstance().log("onMoveUserToGreenRoom MOD1")
+						adminLobby.onRemoveUser();
+						adminLobby.reMoveUserFromShow(tempObj);
+					}else if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+					{
+						AppManager.getInstance().log("onMoveUserToGreenRoom MOD2")
+						adminLobby.reMoveUserFromShowMOD2(tempObj);
+					}
+				}
+			}
+			
+			protected function onMoveUserToShow(e:WowzaCustomEvent):void
+			{
+				if(e.eventObj.hasOwnProperty("reason"))
+				{
+					var reason:String = e.eventObj.reason.toString();
+					if(reason.search("Full") != -1)
+					{
+						AppManager.getInstance().log("Show is Full! Please remove any user to add new."+ reason)
+						Alert.show("Show is Full! Please remove any user to add new.");
+						adminLobby.removeWaitPopUp();
+						adminLobby.resetArrayToShow();
+						adminLobby.rearangeScreeningOrder();
+					}
+				}
+				
+				var showArray:Array = AppManager.getInstance().ShowUserArray;
+				
+				var tempObj:Object = e.eventObj;
+				if(tempObj != null || tempObj != "" && reason != "Full")
+				{
+					showArray = new Array();
+					showArray = (e.eventObj.array) as Array;
+					AppManager.getInstance().ShowUserArray = new Array();
+					AppManager.getInstance().ShowUserArray = showArray;
+					
+					var actualUsers:int = 0;
+					
+					for(var conts:int=0;conts<showArray.length;conts++)
+					{
+						if(showArray[conts] != "default")
+						{
+							actualUsers = actualUsers+1;
+						}
+					}
+					
+					AppManager.getInstance().showArrPos = actualUsers;
+					
+					if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+					{
+						if(e.eventObj.hasOwnProperty("reason"))
+						{
+							reason = "";
+							reason = e.eventObj.reason.toString();
+							if(reason.search("Full") != -1)
+							{
+								
+							}
+							else
+							{
+								adminLobby.addUserToShow(tempObj);
+							}
+						}
+						else
+						{
+							adminLobby.addUserToShow(tempObj);
+						}
+					}
+					else if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+					{
+						adminLobby.addUserToShowMod2(tempObj);
+					}
+					
+				}
+			}
+			
+			protected function closePrivateChat(e:WowzaCustomEvent):void{
+				//lobby.closePrivateChat(e.eventObj);
+				if(_userID == e.eventObj.tocloseID)
+				{
+					PopUpManager.removePopUp(_privateChat);
+				}
+			}
+			
+			protected function onPrivateChat(e:WowzaCustomEvent):void{
+				//lobby.userlistPod.setprivateChat(e.eventObj);
+				//setup private chat in user list
+			}
+			
+			private function closeAllWindows():void {
+				var popup:IpopUp;
+				var popupPackage:Array;
+				for (var i:Number=0;i<systemManager.popUpChildren.numChildren;i++) 
+				{
+					popupPackage = getQualifiedClassName(systemManager.popUpChildren.getChildAt(i)).split("::");
+					if (popupPackage[0] == "components") {
+						popup = systemManager.popUpChildren.getChildAt(i) as IpopUp;
+						if(popup)
+						{
+							popup.closeWindow();
+						}
+					}
+				}
+			}
+			
+			private function removeItemArray(thearray:Array , theItem:String):Array
+			{
+				for(var i:int=0; i<thearray .length;i++)
+				{
+					if(thearray[i] == theItem){
+						thearray.splice(i,1);
+						break;
+					}
+				}
+				
+				return thearray;
+			}
+			
+			private function cleanArray(srcArr:Array):Array
+			{
+				var arr:Array = new Array();
+				for(var i:int=0;i<srcArr.length;i++)
+				{
+					if(srcArr[i]=="default")
+					{
+						arr.splice(i, 1);
+					}
+				}
+				return arr;
+			}
+			
+			protected function application1_creationCompleteHandler(event:FlexEvent):void
+			{
+				/*  var loginWS:WebService = new WebService();
+				loginWS.useProxy = false; 
+				loginWS.ShowDetails.addEventListener("result", onResult); 
+				loginWS.LoginOperation.resultFormat = 'e4x'; 
+				loginWS.addEventListener("fault", fault); 
+				loginWS.loadWSDL('http://192.168.2.108/UserServices/Services.asmx?wsdl'); 
+				loginWS.ShowDetails("2");  */
+				callABSService();
+			}
+			
+			private function onResult(e:ResultEvent):void
+			{
+				var arrCol:ArrayCollection = e.result as ArrayCollection;
+				var obj:Object = arrCol.getItemAt(1);
+				var instce:String = obj.toString();
+				_connectionProps.setInstanceName(instce);
+				_connectionProps.getInstanceName();
+				callABSService();
+			}
+			
+			private function fault(e:FaultEvent):void
+			{
+				var newVrl:String = "http://192.168.2.108/ABS/index.php";
+				//navigateToURL(new URLRequest(newVrl), "_self");
+				_hasClosedConnection = true;
+				_nc.close();
+				
+				adminLobby.visible = false;
+				adminLobby.includeInLayout = false;
+				
+				loginPanel.visible = true;
+				loginPanel.includeInLayout = true;
+				loginPanel.resetStatus();
+				loginPanel.setStatusText("Something went Wrong!!! Please Close the application and log-in again! fault");
+			}
+			
+			
+			private function callABSService():void
+			{
+				adminLobby.visible = false;
+				adminLobby.includeInLayout = false;
+				
+				loginPanel.visible = true;
+				loginPanel.includeInLayout = true;
+				
+				loginPanel.addEventListener("login",loginPanelLoginHandler);
+			}
+			
+			protected function onUpdateUser(e:WowzaCustomEvent):void
+			{
+				adminLobby.userlistPod.addUser(e.eventObj,AppManager.getInstance().ShowUserArray);
+			}
+			
+			protected function onUpdateAutomaticShift(e:WowzaCustomEvent):void
+			{
+				if(e.eventObj != null)
+				{
+					var str:String = e.eventObj.value;
+					if(str == "true")
+					{
+						adminLobby.automaticShift = true;
+					}
+					else
+					{
+						adminLobby.automaticShift = false;
+					}
+					var boo:Boolean = adminLobby.automaticShift;
+					if(adminLobby.useAutomaticShift != null)
+					{
+						adminLobby.useAutomaticShift.selected = boo;
+					}
+					if(adminLobby.useAutomaticShift1 != null)
+					{
+						adminLobby.useAutomaticShift1.selected = boo;
+					}
+				}
+			}
+			
+			protected function onActivateAutomaticShift(e:WowzaCustomEvent):void
+			{
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					AppManager.getInstance().log("activeReplyAutomaticShift on MOD1");
+					AppManager.getInstance().oldShowUserArray = AppManager.getInstance().ShowUserArray;
+					var msg :String = "/activeReplyAutomaticShift ";
+					var colour:String = "FFFFFF";
+					AppManager.getInstance().log("msg is :"+msg);
+					_nc.call("sendMessage", null, msg, "#" + colour, false, 0);
+				}
+				adminLobby.automaticShiftReply = true;
+			}
+			
+			protected function onActivateReplyAutomaticShift(e:WowzaCustomEvent):void
+			{
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{
+					AppManager.getInstance().log("onActivateReplyAutomaticShift on MOD2");
+					adminLobby.removeAllUsersFromShow();
+					adminLobby.automaticShiftReply = false;
+				}
+			}
+			
+			protected function onRemoveUser(e:WowzaCustomEvent):void
+			{
+				var arr:Array = AppManager.getInstance().ShowUserArray;
+				var arrOld:Array = AppManager.getInstance().oldShowUserArray;
+				
+				if( e.eventObj.hasOwnProperty("array"))
+				{
+					arr = new Array();
+					arr = e.eventObj.array;
+				}
+				
+				if((AppManager.getInstance().userRole == UserRole.MODERATOR1))
+				{
+					var id:Number = Number(e.eventObj.info);
+					var user:User = adminLobby.userlistPod.getUserbyid(id.toString());
+					if(user)
+					{
+						AppManager.getInstance().log("onRemoveUser on MOD1 "+user.userName);
+						if(user.showPos > 0)
+						{
+							//AppManager.getInstance().log("removing user from server call dispatch user"+id);
+							adminLobby.onRemoveUser(true);
+						}
+					}
+					
+					adminLobby.userlistPod.removeUser(id,arr);
+				}
+				
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{
+					var obj:Object = new Object();
+					obj =  e.eventObj;
+					var array:Array = obj.array;
+					var ids:String= obj.info;
+					if(ids != null && array != null && ids.length > 0)
+					{
+						var obj1:Object = new Object();
+						obj1.user = new Object();
+						obj1.user.userId =ids;
+						//AppManager.getInstance().log("onRemoveUser on MOD2 "+obj1.user.userName);
+						adminLobby.reMoveUserFromShowMOD2(obj1);
+					}
+				}
+			}
+			
+			private function onDisablePoll(event:WowzaCustomEvent):void
+			{
+				adminLobby.disablePoll(event.eventObj);
+			}
+			
+			
+		]]>
+	</fx:Script>
+	<components:AdminLobby id="adminLobby" width="100%" height="100%" logout="lobby_logoutHandler(event)" />
+	<components:LoginPanel id="loginPanel" horizontalCenter="0" visible="false" includeInLayout="false" verticalCenter="10"/>
+</s:WindowedApplication>

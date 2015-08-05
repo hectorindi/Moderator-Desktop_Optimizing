@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009"
+				xmlns:s="library://ns.adobe.com/flex/spark"
+				xmlns:mx="library://ns.adobe.com/flex/mx"
+				width="100%" autoDrawBackground="true"
+				height="100%">
+	<s:states>
+		<s:State name="normal" />
+		<s:State name="hovered" />
+		<s:State name="selected" />
+	</s:states>
+	
+	<fx:Script>
+		<![CDATA[
+			import mx.controls.Spacer;
+			
+			import spark.utils.DataItem;
+			
+			[Bindable]
+			private var item:DataItem;
+			
+			override public function set data(value:Object):void
+			{
+				if(value)
+				{
+					title.text = value.title;
+					var queStr:String = value.question;
+					var arr:Array = queStr.split("`");
+					if(arr.length > 1  )
+					{
+						question.text = arr[0];
+					}
+					else
+					{
+						question.text = value.question;
+					}
+					
+					var active:String = value.active;
+					if(active == "false")
+					{
+						question.setStyle("color","red"); 
+					}
+					
+				}
+			}
+		]]>
+	</fx:Script>
+	
+	<s:Group id="outerCover" width="100%" height="100%" alpha="0.9"
+			 contentBackgroundColor.normal="#FFFFFF"
+			 contentBackgroundAlpha.selected="0.0" contentBackgroundColor.selected="#AFDFFD">
+		<s:layout>
+			<s:HorizontalLayout horizontalAlign="left" paddingLeft="10" verticalAlign="middle"
+								paddingBottom="3" paddingTop="3"/>
+		</s:layout>
+		<s:Label id="title" text="Title of the question "
+				 fontSize="20"/>
+		<s:Spacer width="20"/>
+		<s:Label id="question" text="Where have you been Man???"
+				 fontSize="16"/>
+	</s:Group>
+</s:ItemRenderer>

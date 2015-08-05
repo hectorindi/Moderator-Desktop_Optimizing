@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 width="350" height="422" xmlns:components="components.*" 
+		 xmlns:VideoPods="components.VideoPods.*"
+		 close="titlewindow1_closeHandler(event)" skinClass="skins.ChatWindowSkin" title="Private Video Chat">
+	
+	<fx:Metadata>
+		
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			import com.encast.UserRole;
+			
+			import mx.events.CloseEvent;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			
+			private var _nc:NetConnectionManager;
+			private var _so:SharedObject;
+			
+			private var _userID:Number;
+			private var _userName:String;
+			private var _lobby:AdminLobby;
+			private var _toUserID:Number;
+			private var _withUserName:String;
+			private var _userlistPod:UserList;
+			
+			
+			public static var ON_REMOVE_POPUP_PRIVATE:String = "onRemovePopUp";
+			public static var ON_START_PRIVAT_VID_CHAT:String = "onStatPrivateVidChat";
+			
+			public var startChat:Boolean = false;
+			public var withUserID:Number = 0;
+			
+			public function intializePrivateVideoChat(nc:NetConnectionManager,_withUserID:Number,withUserName:String):void
+			{
+				_nc = nc; 
+				withUserID = _withUserID;
+				_toUserID = (withUserID);
+				_userName = AppManager.getInstance().userName;
+				_userID = AppManager.getInstance().userID;
+				_withUserName=withUserName;
+				if(AppManager.getInstance().userRole == 1)
+				{
+					_toUserID = 0;
+					withUserID = _withUserID = 0; 
+				}
+				if(userVid != null && hostVid != null  && startChat == false)
+				{
+					userVid.initializeVideoPod(_nc);
+					hostVid.initializeVideoPod(_nc);
+					userVid.withUserID = withUserID;
+					userVid.title = _withUserName;
+					startChat = true;
+				}
+			}
+					
+			protected function private_chat_mouseDownHandler(event:MouseEvent):void{
+				startDrag();
+			}
+			
+			protected function privateChat_mouseUpHandler(event:MouseEvent):void{
+				stopDrag();
+			}
+			
+			protected function privateChat_mouseOutHandler(event:MouseEvent):void{
+				stopDrag();
+			}
+			
+			protected function p_creationCompleteHandler(event:FlexEvent):void
+			{
+				if(startChat == false && _nc)
+				{
+					if(userVid != null && hostVid != null)
+					{
+						startChat = true;
+						initializePrivateChat(_nc,_userID,_userName,_toUserID,_userlistPod);
+						userVid.initializeVideoPod(_nc);
+						hostVid.initializeVideoPod(_nc);
+						userVid.withUserID = withUserID;
+						userVid.title = _withUserName;
+					}
+				}
+			}
+			
+			public function destroy():void
+			{
+				closeWindow();
+			}
+			
+			public function initializePrivateChat(nc:NetConnectionManager, userID:Number, userName:String, toUserID:Number,userlistPod:UserList=null):void{
+				_nc = nc;
+				_userID = userID;
+				_userName = userName;
+				_toUserID = toUserID;
+				_userlistPod = userlistPod;
+				_so = SharedObject.getRemote("chatPrivate", _nc.uri, false);
+				_so.client = this;
+				_so.connect(_nc);
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					_userID = 0;
+				}
+				if(startChat == false)
+				{
+					intializePrivateVideoChat(nc,toUserID,_withUserName);
+				}
+				var withUserName:String ;
+				if(AppManager.getInstance().userRole == UserRole.PREMIUM_USER)
+				{
+					statusText.text = "You are in Private chat with Moderator.";
+				}
+				else
+				{
+					statusText.text = "You are in Private chat with "+_withUserName;
+				}
+			}
+			
+			public function addChatPrivate(data:String):void
+			{
+				
+				if(data != undefined) 
+				{
+					var msg:String = data as String;
+					_so.data["chat"]
+					msg = "<p>"+msg+"</p>";
+					/*if(msg.search("Moderator")!= -1)
+					{
+						chatArea.htmlText += "<b>" + msg + "</b>";
+					}
+					else*/
+					{
+						var parts:Array = data.split("/");
+						msg = "<b>"+parts[0]+'</b> : <font color="#'+parts[1]+'"> '+parts[2]+"</font>";
+						trace(msg);
+						chatArea.htmlText += msg;
+					}
+				}
+			}
+			
+			public function receiveMessage(msg:String, userID:Number, privateChat:Boolean, toUserID:Number):void{
+				if(privateChat == true)
+				{
+					if(_userID == toUserID || _userID == userID)
+					{
+						chatArea.htmlText += "<font color='#333333'>" + msg + "</font></br>";
+					}
+				}
+				else
+				{
+					lobby.receiveMessage(msg, userID, privateChat, toUserID);
+				}
+			}
+			
+			public function showAdminMessage(msg:String):void{
+				chatArea.htmlText += "<font color='#FF0000'><b>Admin</b>: " + msg + "</font></br>";
+			}
+			
+			private function backToLobbyButton_clickHandler(e:MouseEvent):void{
+				var goBackToLobbyEvent:Event = new Event("goBackToLobby");
+				dispatchEvent(goBackToLobbyEvent);
+			}
+			
+			//need this in to handle the error that will happen, this function does nothing.
+			public function sendMessage(msg:String, clr:String, uID:Number, pC:Boolean):void{
+				
+			}
+			
+			private function sendTheMessage(msg:String):void{
+				//grab the colour
+				/*var colour:String = colorPicker.selectedColor.toString(16);
+				
+				_nc.call("sendMessage", null, msg, "#" + colour, _userID.toString(), AppManager.getInstance().showID,true, _toUserID.toString());
+				chatTextInput.text = "";
+				chatTextInput.setFocus();*/
+				var msg:String = chatTextInput.text;
+				if(msg != "")
+				{
+					var colour=colorPicker.selectedColor.toString(16);
+					//_so.setProperty("chat", msg);
+					var msgComplete:String = AppManager.getInstance().userName+"/"+colour+"/"+msg+"/";
+					_so.send("addChatPrivate",msgComplete);
+					chatTextInput.text = "";
+					chatTextInput.setFocus();
+				}
+			}
+			
+			protected function sendButton_clickHandler(event:MouseEvent):void{
+				var msg:String = chatTextInput.text;
+				if(msg != ""){
+					sendTheMessage(msg);
+				}
+			}
+			
+			protected function chatTextInput_enterHandler(event:FlexEvent):void{
+				var msg:String = chatTextInput.text;
+				if(msg != ""){
+					sendTheMessage(msg);
+				}
+			}
+			
+			public function chatStopped():void
+			{
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					_userName = "";
+					_withUserName = "";
+					_nc.call("closeChat" ,null, _userID,_toUserID);
+				}
+			}
+			
+			protected function chatArea_updateCompleteHandler(event:FlexEvent):void
+			{
+				chatArea.verticalScrollPosition = chatArea.maxVerticalScrollPosition;
+			}
+			
+			public function get lobby():AdminLobby
+			{
+				return _lobby;
+			}
+			
+			public function set lobby(value:AdminLobby):void
+			{
+				_lobby = value;
+			}
+			
+			public function closePrivateChat(userInfo:Object):void
+			{
+				if(_userlistPod != null)
+				{
+					_userlistPod.resetUsers(userInfo);
+					if(_userID == userInfo.uniqueUserID || _userID == userInfo.withUserID)
+					{
+						closeWindow();
+					}
+				}
+			}
+			
+			protected function chatArea_creationCompleteHandler(event:FlexEvent):void
+			{
+				if(_userName != "" && _withUserName != "" && _userName != null && _withUserName != null)
+				{
+					chatArea.htmlText += "<font color='#333333'>" +_userName+ " is in private chat with " + _withUserName+ "</font></br>";
+				}
+			}
+			
+			public function closeWindow():void
+			{
+				if(userVid)
+				{
+					userVid.destroy();
+				}
+				if(hostVid)
+				{
+					hostVid.destroy();
+				}
+				PopUpManager.removePopUp(this);
+				if(_so)
+				{
+					_so.clear();
+				}
+			}
+			
+			protected function titlewindow1_closeHandler(event:CloseEvent):void
+			{
+				/* if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					_userName = "";
+					_withUserName = "";
+					_nc.call("closeChat" ,null, _userID,_toUserID);
+				}
+				else
+				{
+					_userName = "";
+					_withUserName = "";
+					_nc.call("closeChat" ,null, _userID,_toUserID);
+				} */
+				closeWindow();
+				var eve:Event = new Event(PrivateChatPoPup.ON_REMOVE_POPUP_PRIVATE);;
+				dispatchEvent(eve);
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<!--<s:HGroup left="0" right="0" top="30" height="160" gap="20" horizontalAlign="center">
+	<components:VideoPod width="160" height="160" id="videoPod1" publishStart="videoPod_publishStartHandler(event)" publishStop="videoPod_publishStopHandler(event)" streamStop="videoPod_streamStopHandler(event)" />
+	<components:VideoPod width="160" height="160" id="videoPod2" publishStart="videoPod_publishStartHandler(event)" publishStop="videoPod_publishStopHandler(event)" streamStop="videoPod_streamStopHandler(event)" />
+	</s:HGroup>-->
+	
+	<s:Group id="chatPod" left="0" right="0" top="0" height="437"
+			 creationComplete="p_creationCompleteHandler(event)">
+		<s:Label id="statusText" x="26" y="6" color="0x000000" fontSize="18"
+				 text="You are now in Private chat with user"/>
+		<mx:TextArea id="chatArea" left="9" top="199" bottom="83" width="329" color="0x000000"
+					 creationComplete="chatArea_creationCompleteHandler(event)" editable="false"
+					 updateComplete="chatArea_updateCompleteHandler(event)"/>
+		<s:TextInput id="chatTextInput" left="10" right="112" bottom="57" enter="chatTextInput_enterHandler(event)"/>
+		<s:Button id="sendButton" right="10" bottom="57" width="70" label="Send" click="sendButton_clickHandler(event)"/>
+		<mx:ColorPicker right="86" bottom="57" id="colorPicker"/>
+		<VideoPods:ClassicVideoPodUser id="userVid" height="150" width="150" right="10" bottom="256"/>
+		<VideoPods:ClassicVideoPodMod id="hostVid" height="150" width="150" right="188" bottom="256"/>
+	</s:Group>
+</s:TitleWindow>

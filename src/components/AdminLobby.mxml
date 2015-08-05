@@ -1,0 +1,2511 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" 
+		 width="100%" height="100%" 
+		 xmlns:components="components.*" 
+		 xmlns:flexpaper="com.devaldi.controls.flexpaper.*"
+		 xmlns:VideoPods="components.VideoPods.*">
+	
+	<fx:Metadata>
+		[Event(name="logout", type="flash.events.Event")]
+	</fx:Metadata>
+	
+	<s:states>
+		<s:State name="MOD1"/>
+		<s:State name="MOD2"/>
+	</s:states>
+	
+	<fx:Script>
+		
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			import com.encast.UserRole;
+			import com.encast.WowzaCustomEvent;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			import mx.managers.PopUpManagerChildList;
+			
+			import components.VideoPods.RecivingPod;
+			import components.VideoPods.VideoPodUserInfo;
+			
+			import events.AdministrationPanelEvent;
+			
+			import interfaces.IpopUp;
+			
+			import valueObjects.User;
+			
+			
+			private var _nc:NetConnectionManager;
+			private var _userID:Number;
+			
+			[Bindable]
+			private var _userName:String;
+			
+			private var _chatHistory:Array;
+			private var _queryHistory:Array;
+			private var _so:SharedObject;
+			
+			private var invitePanel:InvitePanel;
+			
+			private var lastTextChangeTime:Number;
+			private var _isTypingTimer:Timer;
+
+			private var _userRole:int;
+			public var colour:String="";
+			
+			[Bindable]
+			public var whoIsTypingString:String;
+			
+			private var adminPanel:AdministrationPanel;
+			private var _privateVidChat:PrivateChatPoPup;
+			
+			private var _removeUser:Number = 0;
+			private var _automaticShift:Boolean = true;
+			private var _automaticShiftReply:Boolean = false;
+			
+			public var _screeningArray:ArrayCollection = new ArrayCollection();
+			private var _toMovetoShowArray:ArrayCollection = new ArrayCollection();
+			private var _pleaseWaitAlert:CustomAlert;
+			
+			private var _movingUser:Number;
+			private var _totalRemovedUsers:Number = 0;
+			private var _totalDisconnectedUsers:Number = 0;
+			private var _users:Number = 0;
+			private var _usersMovingInscreening:Number = 0;
+			private var _timerRemove:Timer = new Timer(5000,1);
+			private var _oldArray:Array = new Array();
+			private var _oldScreeningArray:ArrayCollection = new ArrayCollection();
+			
+			
+			private var actualUsers:int = 0;
+			private var awailableUsers:Number = 0; 
+			
+			public function initializeLobby(nc:NetConnectionManager, chatHistory:Array,queryHistory:Array,userRole:int):void{
+				_userRole = userRole;
+				_nc = nc;
+				_userID = AppManager.getInstance().userID;
+				_userName = AppManager.getInstance().userName;
+				_chatHistory = chatHistory;
+				_queryHistory=queryHistory;
+				_so = SharedObject.getRemote("chatLobby", _nc.uri, false);
+				_so.addEventListener(SyncEvent.SYNC, onSync);
+				_so.client = this;
+				_so.connect(_nc);
+				
+				AppManager.getInstance().log(" nc "+_nc+" userID "+_userID+" name "+ _userName);				
+				
+				if(_userRole == UserRole.MODERATOR1)
+				{
+					var totalChatHistory:String = "";
+					var totalQueryHistory:String = "";
+					
+					if(_chatHistory != null)
+					{
+						if(_chatHistory.length > 0){
+							for(var i:int = 0; i < _chatHistory.length; i++){
+								totalChatHistory += chatHistory[i] + "<br>";
+							}
+						}
+					}
+					
+					userlistPod.initializeUserList(_nc);
+					userlistPod.lobby = this;
+					setModerator1UI();					
+					//changes for query history 
+					if(_queryHistory != null)
+					{
+						if(_queryHistory.length > 0){
+							for(var j:int = 0; j < _queryHistory.length; j++){
+								totalQueryHistory += _queryHistory[j] + "<br>";
+							}
+						}
+					}
+					
+				}
+				else if(_userRole == UserRole.MODERATOR2)
+				{
+					setModerator2UI();
+					//changes for query history 
+					if(_queryHistory != null)
+					{
+						if(_queryHistory.length > 0){
+							for(var k:int = 0; k < _queryHistory.length; k++){
+								totalQueryHistory += _queryHistory[k] + "<br>";
+							}
+						}
+					}
+					
+				}
+				this.addEventListener("enlargeVideo", onEnlageVideo);
+				this.addEventListener("sendToscreening",onSendToScreening);
+				this.addEventListener("removeFromScreening",onRemoveFromScreening);
+				this.addEventListener("sendToShow",onMoveUsersToShow);
+				this.addEventListener("screeningOrderChanged",onScreeningOrderChanged);
+				this.addEventListener("openModWindow",onOpenModWindow);
+				this.addEventListener("RecivingPodRemoved",onRecivingPodRemoved);
+				
+				chatArea.htmlText += "<font color='#FF0000'><b>Admin</b>: Welcome " + _userName +" !"+ "</font></br>";
+				initautomaticShift();
+			}
+			
+			public function onEnlageVideo(eve:WowzaCustomEvent):void
+			{
+				var id:String = eve.eventObj.id as String;
+				sendTheMessage("/enlargeVideo "+id);
+			}
+			
+			public function onUserRemoved(index:int):void
+			{
+				var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+				var user:Object = _userListDP[index];
+				var temObj:Object = new Object();
+				temObj.user = user;
+				if(temObj.user != null)
+				{
+					if(user != null)
+					{
+						try
+						{
+							var array:Array = AppManager.getInstance().ShowUserArray;
+							var hasUser:Boolean = false;
+							for(var count:int = 0;count<array.length;count++)
+							{
+								if(user.userId == array[count])
+								{
+									hasUser = true;
+									//AppManager.getInstance().log(" MoveToShow called but user already exist "+user.emailId+" and id is : "+user.userId);
+								}
+							}
+							
+							if(_automaticShift == true)
+							{
+								if(_screeningArray.length > 0 && _screeningArray.length < 25)
+								{
+									_toMovetoShowArray.addItem(_screeningArray[0]);
+									moveUserstoShow(0);
+								}
+								//sendTheMessage("/MoveToShow/"+user.userId+"/"+user.emailId+"/"+user.showId);
+								//AppManager.getInstance().log(" MoveToShow called on "+user.emailId+" and id is : "+user.userId);
+								//Alert.show("A user is removed from the show and the top user in the list is added to show.","Notification");
+							}
+						}
+						catch(e:Error)
+						{
+							//AppManager.getInstance().log("Error sending user to show");
+						}
+					}
+				}
+			}
+			
+			public function onDenyInvite(user:Object):void{
+				userlistPod.setInvitedValue(false);
+				userlistPod.resetUsers(user);
+			}
+			
+			public function onInvitedUserLogoff():void{
+				//chatArea.htmlText += "<font color='#FF0000'><b>Admin</b>: The user you invited has logged off</font></br>";
+			}
+			
+			public function showBannedUsers(bannedUsersList:Object):void{
+				var msg:String = "List of banned users:<br>";
+				
+				for(var i:Object in bannedUsersList){
+					msg += "Username: " + bannedUsersList[i].bannedUserName + " - IP: " + bannedUsersList[i].bannedUserIP + " - Reason: " + bannedUsersList[i].bannedReason + "<br>";
+				}
+				
+				chatArea.htmlText = msg;
+			}
+			
+			public function onKicked(msg:String):void{
+	
+			}
+			
+			public function onReceiveInvite(invitingUserName:String):void{
+				//show the invite panel
+				
+				if(invitePanel == null)
+				{
+					invitePanel = new InvitePanel();
+					invitePanel.invitingUserName = invitingUserName;
+					
+					invitePanel.addEventListener(invitePanel.ON_GO_TO_PRIVATE_CHAT, onGoToPrivateChat);
+					invitePanel.addEventListener(invitePanel.ON_STAY_IN_LOBBY, onStayInLobby);
+					
+					PopUpManager.addPopUp(invitePanel, this, true,PopUpManagerChildList.POPUP);
+					PopUpManager.centerPopUp(invitePanel);
+					
+					//set the invited state in the userlist
+					userlistPod.setInvitedValue(true);
+				}
+			}
+			
+			private function onGoToPrivateChat(e:Event):void{
+				removeInvitePanel();
+				_nc.call("acceptInvite", null);
+			}
+			
+			private function onStayInLobby(e:Event):void{
+				removeInvitePanel();
+				_nc.call("denyInvite", null);
+			}
+			
+			public function onCancelInvite():void{
+				removeInvitePanel();
+			}
+			
+			private function removeInvitePanel():void{
+				if(invitePanel)
+				{
+					invitePanel.removeEventListener(invitePanel.ON_GO_TO_PRIVATE_CHAT, onGoToPrivateChat);
+					invitePanel.removeEventListener(invitePanel.ON_STAY_IN_LOBBY, onStayInLobby);
+					PopUpManager.removePopUp(invitePanel);
+					invitePanel = null;
+				}
+			}
+			
+			
+			//need this in to handle the error that will happen, this function does nothing.
+			public function sendMessage(msg:String, clr:String, uID:Number, pC:Boolean):void{
+				
+			}
+			
+			public function sendTheMessage(msg:String):void{
+				var colour:String=colorPicker.selectedColor.toString(16);
+				var showID:int = AppManager.getInstance().showID;
+				AppManager.getInstance().log("msg is admin lobby :"+msg);
+				_nc.call("sendMessage", null, msg, "#" + colour, _userID, showID, false, 0);
+			}
+			
+			protected function logoutButton_clickHandler(event:MouseEvent):void{
+				var eventObj:Event = new Event("logout");
+				dispatchEvent(eventObj);
+			}	
+			
+			public function close():void{
+				
+			}
+		
+			private function removePopUpPrivateChat(eve:Event):void
+			{
+				if(_privateVidChat != null)
+				{
+					sendTheMessage("/closePrivateChat "+_privateVidChat.withUserID+" "+AppManager.getInstance().userID);
+					_privateVidChat.removeEventListener(PrivateChatPoPup.ON_REMOVE_POPUP_PRIVATE, removePopUpPrivateChat);
+					//_privateVidChat.destroy();
+					_privateVidChat = null;
+				}
+			}
+			
+			public function closePrivateChatPanel(id:Number,id2:Number):void
+			{				
+				if(_privateVidChat != null)
+				{
+					if(id == Number(_privateVidChat.withUserID) || id2 == Number(_privateVidChat.withUserID))
+					{
+						_privateVidChat.removeEventListener(PrivateChatPoPup.ON_REMOVE_POPUP_PRIVATE, removePopUpPrivateChat);
+						_privateVidChat.destroy();
+						_privateVidChat = null;
+					}
+				}
+			}	
+			
+			private function openPrivateChatPopUp(e:Event):void
+			{
+				if(_privateVidChat == null && AppManager.getInstance().userRole == UserRole.MODERATOR1){ 
+					
+					var user:Object;
+					
+					var panel:AdministrationPanel = e.target as AdministrationPanel
+					if(panel.userID != 0)
+					{
+						user = userlistPod.getUserbyidAsObject(panel.userID.toString())
+					} 
+					else
+					{
+						user=userlistPod.userList.selectedItem;
+					}
+					
+					if(user != null)
+					{
+						var msg:String;
+						sendTheMessage("/invokePrivateChat "+user.userId);
+						_privateVidChat = new PrivateChatPoPup();
+						_privateVidChat.addEventListener(PrivateChatPoPup.ON_REMOVE_POPUP_PRIVATE, removePopUpPrivateChat);
+						_privateVidChat.intializePrivateVideoChat(_nc,user.userId,user.userName);
+						PopUpManager.addPopUp(_privateVidChat, this, true,PopUpManagerChildList.POPUP);
+						PopUpManager.centerPopUp(_privateVidChat);
+					}
+				}
+			}
+	
+			protected function openModPanel(uid:String = null):void{
+				//show the admin panel if it isn't showing
+				
+				if(adminPanel == null){ 
+					adminPanel = new AdministrationPanel();
+					adminPanel.addEventListener(AdministrationPanel.ON_CLOSE_BUTTON_CLICKED, onAdminPanelCloseButtonClicked);
+					adminPanel.addEventListener(AdministrationPanel.ON_BAN_USER_BUTTON_CLICKED, onAdminPanelBanUserButtonClicked);
+					adminPanel.addEventListener(AdministrationPanel.ON_UNBAN_USER_BUTTON_CLICKED, onAdminPanelUnBanUserButtonClicked);
+					adminPanel.addEventListener(AdministrationPanel.ON_KICK_USER_BUTTON_CLICKED, onAdminPanelKickUserButtonClicked);
+					adminPanel.addEventListener(AdministrationPanel.ON_CLEAR_CHAT_BUTTON_CLICKED, onAdminPanelClearChatButtonClicked);
+					adminPanel.addEventListener(AdministrationPanel.ON_LIST_BANNED_USERS_BUTTON_CLICKED, onAdminPanelListBannedUsersButtonClicked);
+					adminPanel.addEventListener(AdministrationPanel.ON_REMOVE_POPUP, removePopUp);
+					adminPanel.addEventListener(AdministrationPanel.ON_START_PRIVAT_VID_CHAT, openPrivateChatPopUp);
+					adminPanel.userID = Number(uid);
+					adminPanel.addEventListener(AdministrationPanel.ON_MOVE_USER_TO_GREEN_ROOM , onMoveUserToGreenRoom);
+					adminPanel.addEventListener(AdministrationPanel.ON_MOVE_USER_TO_SHOW , onMoveUSerToShow);
+					
+					PopUpManager.addPopUp(adminPanel, this, true,PopUpManagerChildList.POPUP);
+					PopUpManager.centerPopUp(adminPanel);
+					
+					var item:Object;
+					
+					if(uid != null)
+					{
+						item = userlistPod.getUserbyidAsObject(uid) ;
+						adminPanel.userName.text = item.userName;
+						adminPanel.userAge.text = item.age.toString();
+						adminPanel.userCity.text = item.city;
+					}
+					else
+					{
+						item = new User(userlistPod.userList.selectedItem);
+						adminPanel.userName.text = item.userName;
+						adminPanel.userAge.text = item.age.toString();
+						adminPanel.userCity.text = item.city;
+					}
+					
+					var role:int = item.userRole;
+					
+					if(item != null)
+					{
+						//var obj:Object = userlistPod.userList.selectedItem; 
+						if(item.hasOwnProperty("showPos") == true)
+						{
+							if(item.showPos != 0 && !isNaN(item.showPos))
+							{
+								adminPanel.moveUserToShow.enabled = false;
+								adminPanel.moveUserToGreen.enabled = true;
+							}
+							else
+							{
+								adminPanel.moveUserToShow.enabled = true;
+								adminPanel.moveUserToGreen.enabled = false;
+							} 
+						}
+						else
+						{
+							adminPanel.moveUserToShow.enabled = true;
+							adminPanel.moveUserToGreen.enabled = false;
+						}	
+						
+					}
+										
+					PopUpManager.centerPopUp(adminPanel);
+				}
+			}
+			
+			private function onMoveUserToGreenRoom(e:Event):void{
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					var user:Object;
+					
+					var panel:AdministrationPanel = e.target as AdministrationPanel
+					if(panel.userID != 0)
+					{
+						user = userlistPod.getUserbyidAsObject(panel.userID.toString())
+					} 
+					else
+					{
+						user=userlistPod.userList.selectedItem;
+					}
+					
+					if(user != null)
+					{
+						_removeUser = user.userId;
+						sendTheMessage("/MoveUserToGreenRoom/"+user.userId+"/"+user.emailId+"/"+user.showID);
+					}
+				}
+				if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{
+					var eve:WowzaCustomEvent = e as WowzaCustomEvent;
+					if(eve.eventObj != null)
+					{
+						_removeUser = user.userId;
+						sendTheMessage("/MoveUserToGreenRoom/"+eve.eventObj.publishingUserID+"/"+eve.eventObj.publishingUserEmail+"/"+eve.eventObj.showId);
+					}
+					
+				}
+				if(_toMovetoShowArray.length == 0)
+				{
+					rearangeScreeningOrder();
+					//rearrageScreeningUsers(true);
+				}
+			}
+			
+			private function onMoveUSerToShow(e:Event):void{
+				var user:Object;
+				
+				var panel:AdministrationPanel = e.target as AdministrationPanel
+				if(panel.userID != 0)
+				{
+					user = userlistPod.getUserbyidAsObject(panel.userID.toString())
+				} 
+				else
+				{
+					user=userlistPod.userList.selectedItem;
+				}
+				
+				if(user != null)
+				{
+					//sendTheMessage("/MoveToShow/"+user.userId.toString()+"/"+user.emailId+"/"+user.showID);
+					_toMovetoShowArray.addItem(user);
+					_movingUser = user.userId;
+					
+					_pleaseWaitAlert = null;
+					_pleaseWaitAlert = new CustomAlert(); 
+					PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+					PopUpManager.centerPopUp(_pleaseWaitAlert);
+					moveUserstoShow(0)
+				}
+				if(_toMovetoShowArray.length == 0)
+				{
+					rearangeScreeningOrder();
+					//rearrageScreeningUsers(true);
+				}
+			}
+			
+			private function onAdminPanelCloseButtonClicked(e:Event):void{
+				adminPanel.removeEventListener(AdministrationPanel.ON_CLOSE_BUTTON_CLICKED, onAdminPanelCloseButtonClicked);
+				PopUpManager.removePopUp(adminPanel);
+				removeListnerfromAdminPopUp();
+				adminPanel = null;
+			}
+			
+			private function removeListnerfromAdminPopUp():void
+			{
+				if(adminPanel)
+				{
+					adminPanel.removeEventListener(AdministrationPanel.ON_CLOSE_BUTTON_CLICKED, onAdminPanelCloseButtonClicked);
+					adminPanel.removeEventListener(AdministrationPanel.ON_BAN_USER_BUTTON_CLICKED, onAdminPanelBanUserButtonClicked);
+					adminPanel.removeEventListener(AdministrationPanel.ON_UNBAN_USER_BUTTON_CLICKED, onAdminPanelUnBanUserButtonClicked);
+					adminPanel.removeEventListener(AdministrationPanel.ON_KICK_USER_BUTTON_CLICKED, onAdminPanelKickUserButtonClicked);
+					adminPanel.removeEventListener(AdministrationPanel.ON_CLEAR_CHAT_BUTTON_CLICKED, onAdminPanelClearChatButtonClicked);
+					adminPanel.removeEventListener(AdministrationPanel.ON_LIST_BANNED_USERS_BUTTON_CLICKED, onAdminPanelListBannedUsersButtonClicked);
+					adminPanel.removeEventListener(AdministrationPanel.ON_REMOVE_POPUP, removePopUp);
+					adminPanel.removeEventListener(AdministrationPanel.ON_START_PRIVAT_VID_CHAT, openPrivateChatPopUp);
+					adminPanel.removeEventListener(AdministrationPanel.ON_MOVE_USER_TO_GREEN_ROOM , onMoveUserToGreenRoom);
+					adminPanel.removeEventListener(AdministrationPanel.ON_MOVE_USER_TO_SHOW , onMoveUSerToShow);
+				}
+			}
+			
+			private function onAdminPanelClearChatButtonClicked(e:Event):void{
+				sendTheMessage("/clear");
+			}
+			
+			private function onAdminPanelListBannedUsersButtonClicked(e:Event):void{
+				sendTheMessage("/listbanned");
+			}
+			
+			private function onAdminPanelKickUserButtonClicked(e:Event):void{
+				var user:Object;
+				
+				var panel:AdministrationPanel = e.target as AdministrationPanel
+				if(panel.userID != 0)
+				{
+					user = userlistPod.getUserbyidAsObject(panel.userID.toString())
+				} 
+				else
+				{
+					user=userlistPod.userList.selectedItem;
+				}
+				
+				if(user != null){
+					sendTheMessage("/kickem " + user.userName);
+				}else{
+					Alert.show("You must select a user from the list first", "Error");
+				}
+				
+			}
+			
+			private function onAdminPanelBanUserButtonClicked(e:AdministrationPanelEvent):void{
+				var reason:String = e.banReason;
+				
+				var user:Object;
+				
+				var panel:AdministrationPanel = e.target as AdministrationPanel
+				if(panel.userID != 0)
+				{
+					user = userlistPod.getUserbyidAsObject(panel.userID.toString())
+				} 
+				else
+				{
+					user=userlistPod.userList.selectedItem;
+				}
+				
+				
+				if(user != null){
+					sendTheMessage("/banem " + user.userName + " " + reason);
+				}else{
+					Alert.show("You must select a user from the list first", "Error");
+				}
+			}
+			
+			private function onAdminPanelUnBanUserButtonClicked(e:AdministrationPanelEvent):void{
+				var ip:String = e.ip;
+				sendTheMessage("/unbanem " + ip);
+			}
+			
+			protected function navigatorcontentInit(event:FlexEvent):void
+			{
+				/* var nav:NavigatorContent = event.currentTarget as NavigatorContent;
+				nav.height=userlistPod.height; */
+			}
+			
+
+			protected function userlistPod_creationCompleteHandler(event:FlexEvent):void
+			{
+				userlistPod.addEventListener("openModWindow",onOpenModWindow);
+				userlistPod.addEventListener("removeChatUser",onRemoveChatUser);
+				userlistPod.addEventListener("removeShowUser",onRemoveShowUser);
+				userlistPod.addEventListener("listSyncd",onListSyncd);
+			}
+			
+			private function onListSyncd(e:Event):void
+			{
+				//setupPODS();
+			}
+			
+			private function onOpenModWindow(e:WowzaCustomEvent):void
+			{
+				var obj:Object = e.eventObj as Object;
+				try
+				{
+					if(obj != null)
+						openModPanel(obj.userID);
+					else
+						openModPanel();
+				} catch (e:Error)
+				{
+					openModPanel();
+				}
+			}
+			
+			private function onPrivateChatEnabled(e:Event):void
+			{
+				var box:VideoPodUserInfo = e.target as VideoPodUserInfo;
+				box.chatButton.enabled = false;
+				
+				for(var i:int=1 ;i<7; i++)
+				{
+					var podToActivate:String;
+					var containerName:String = "vidContainer"+i.toString();
+					
+					for(var k:int=0;k<mainContainerVid.numChildren;k++)
+					{
+						var vidBox:Group = mainContainerVid.getChildAt(k) as Group;
+						if(vidBox.id == containerName)
+						{
+							for(var j:int=0;j<vidBox.numChildren;j++)
+							{
+								var infoBox:VideoPodUserInfo = vidBox.getChildAt(j) as VideoPodUserInfo
+								if(infoBox != null)
+								{									
+									infoBox.chatButton.enabled = false;
+								}
+							}
+						}
+					}
+				}	
+			}
+			
+			public function onPrivateChatClosed(e:Event):void
+			{
+				for(var i:int=1 ;i<7; i++)
+				{
+					var podToActivate:String;
+					var containerName:String = "vidContainer"+i.toString();
+					
+					for(var k:int=0;k<mainContainerVid.numChildren;k++)
+					{
+						var vidBox:Group = mainContainerVid.getChildAt(k) as Group;
+						if(vidBox.id == containerName)
+						{
+							for(var j:int=0;j<vidBox.numChildren;j++)
+							{
+								var infoBox:VideoPodUserInfo = vidBox.getChildAt(j) as VideoPodUserInfo
+								if(infoBox != null)
+								{									
+									if(infoBox.userOptionBtn.enabled == true)
+									{
+										infoBox.chatButton.enabled = true;
+									}
+									else
+									{
+										infoBox.chatButton.enabled = false;
+									}
+								}
+							}
+						}
+					}
+				}	
+			}
+			
+			
+			private function onRemoveChatUser(e:Event):void
+			{
+				var popup:IpopUp;
+				var popupPackage:Array;
+				for (var i:Number=0;i<systemManager.popUpChildren.numChildren;i++) {
+					popupPackage = getQualifiedClassName(systemManager.popUpChildren.getChildAt(i)).split("::");
+					if (popupPackage[0] == "components") {
+						popup = systemManager.popUpChildren.getChildAt(i) as IpopUp;
+						if(popup is PrivateChat)
+							popup.closeWindow();
+					}
+				}
+			}
+			
+			private function onRemoveShowUser(e:WowzaCustomEvent):void
+			{
+				reMoveUserFromShow(e.eventObj);
+			}
+			
+			
+			private function setModerator1UI():void
+			{
+				currentState = "MOD1"
+			}
+			
+			private function setModerator2UI():void
+			{
+				currentState = "MOD2";				
+			}
+			
+			private function setViewverUI():void
+			{
+				userlistPod.userList._isModeretor = false;
+				userlistPod.visible = false;
+				userlistPod.userList._isModeretor = false;
+				userlistPod.includeInLayout = false;
+				userlistPod.validateNow();
+			}
+			
+			private function onSync(e:SyncEvent):void{
+				
+			}
+			
+			public function addChat(data:String):void
+			{
+				
+				if(data != undefined) 
+				{
+					var msg:String = data as String;
+					_so.data["chat"]
+					msg = "<p>"+msg+"</p>";
+					/*if(msg.search("Moderator")!= -1)
+					{
+						chatArea.htmlText += "<b>" + msg + "</b>";
+					}
+					else*/
+					{
+						var parts:Array = data.split("/");
+						msg = "<b>"+parts[0]+'</b> : <font color="#'+parts[1]+'"> '+parts[2]+"</font>";
+						trace(msg);
+						chatArea.htmlText += msg;
+					}
+				}
+			}
+		
+			private function removePopUp(eve:Event):void
+			{
+				try
+				{
+					if(adminPanel != null)
+					{
+						PopUpManager.removePopUp(adminPanel);
+						adminPanel = null;
+					}
+				} catch (e:Error)
+				{
+					//AppManager.getInstance().log("Error close pop up")
+				}
+			}
+			
+			public function set userRole(value:int):void
+			{
+				if(value >= 0 && value < 3)
+				{
+					AppManager.getInstance().userRole = _userRole = value;
+					if(UserRole.MODERATOR1 == _userRole)
+					{
+						setModerator1UI();
+					}
+					else if(UserRole.MODERATOR2  == _userRole)
+					{
+						setModerator2UI();
+					}
+					else if(UserRole.PREMIUM_USER  == _userRole)
+					{                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+						setViewverUI();
+					}
+				}
+				else
+				{
+					AppManager.getInstance().userRole = _userRole = 0;
+				}
+			}
+			
+			public function get userRole():int
+			{
+				return _userRole;
+			}
+			
+			public function onSendInvite(mailList:String):void
+			{
+				
+			}
+			
+			protected function chatArea_creationCompleteHandler(event:FlexEvent):void
+			{
+				//chatArea.text = "";
+			}
+			
+			protected function sendButton_clickHandler(event:MouseEvent):void
+			{
+				/*var msg:String = chatTextInput.text;
+				if(msg != "")
+				{
+					colour=colorPicker.selectedColor.toString(16);
+					sendTheMessage(msg);
+					chatTextInput.text = "";
+					chatTextInput.setFocus();
+				}*/
+				var msg:String = chatTextInput.text;
+				if(msg != "")
+				{
+					colour=colorPicker.selectedColor.toString(16);
+					//_so.setProperty("chat", msg);
+					var msgComplete:String = AppManager.getInstance().userName+"/"+colour+"/"+msg+"/";
+					_so.send("addChat",msgComplete);
+					chatTextInput.text = "";
+					chatTextInput.setFocus();
+				}
+			}
+			
+			public function reMoveUserFromShow(Obj:Object):void
+			{
+				var tempObj:Object = Obj;
+				var showArray:Array = new Array();
+				showArray = (Obj.array) as Array;
+				AppManager.getInstance().ShowUserArray = new Array();
+				AppManager.getInstance().ShowUserArray = showArray;
+				
+				var showarray:Array = AppManager.getInstance().ShowUserArray;
+				var inshow:Boolean = false;
+				
+				for(var g:int=0 ;g<showarray.length; g++)
+				{
+					if(showarray[g] != "default")
+					{
+						inshow = true;
+					}
+				}
+				
+				
+				if(inshow == false)
+				{
+					if(_pleaseWaitAlert)
+					{
+						PopUpManager.removePopUp(_pleaseWaitAlert);
+						//pushRemovedUsers();
+						//_totalRemovedUsers = 0;
+						userlistPod.updateDP();
+					}
+				}
+				
+				var actualUsers:int = 0;
+				
+				for(var conts:int=0;conts<showArray.length;conts++)
+				{
+					if(showArray[conts] != "default")
+					{
+						actualUsers = actualUsers+1;
+					}
+				}
+				
+				AppManager.getInstance().showArrPos = actualUsers;
+				
+				var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+				
+				if(_userListDP != null)
+				{
+					 if(_userListDP.length > 0)
+					 {
+						 var users:Object = userlistPod.getUserbyidAsObject(Obj.user.userId);
+						 var index:int = _userListDP.getItemIndex(users);
+						 _userListDP[index].showPos = 0;
+						 _userListDP.refresh();
+						  _userListDP.removeItemAt(index);
+						  var indexToinsert:int = actualUsers;
+						  //var indexToinsert:int = _screeningArray.length + actualUsers;
+						 _userListDP.addItemAt(users,indexToinsert); 
+						 if(_screeningArray.length < 25)
+						 {
+							 _usersMovingInscreening = _usersMovingInscreening +1;
+							_screeningArray.addItemAt(users,0);
+							addUserToScreeningArea(users);
+						 }
+						 else
+						 {
+							 //var user:Object = _userListDP.removeItemAt(index);
+							 //_userListDP.addItem(user);
+							 //Alert.show("Screening Area is full");
+							 //rearrageScreeningUsers(true);
+							 rearangeScreeningOrder();
+						 }
+						 if(useAutomaticShift)
+							 _automaticShift = useAutomaticShift.selected;
+						 if(useAutomaticShift1)
+							 _automaticShift = useAutomaticShift1.selected;
+						 if(_automaticShift == true)
+						 {
+							 /*if(_screeningArray.length > 1)
+							 {
+								 for(var counts:int = 0 ; counts < _totalRemovedUsers; counts++)
+								 {
+									 if(_screeningArray.length > counts){
+										 _toMovetoShowArray.addItem(_screeningArray[counts]); 
+									 }  
+								 }
+								 /*if(Obj.user.userId != _screeningArray[0].userId)
+								 {
+									 _toMovetoShowArray.addItem(_screeningArray[0]); 
+								 }
+								 else
+								 {
+									 _toMovetoShowArray.addItem(_screeningArray[1]); 
+								 }*/
+								 //automaticShift = false;
+								 //_toMovetoShowArray.addItem(_screeningArray[0]); 
+								 //moveUserstoShow(_totalRemovedUsers);
+							 //}*/
+							 //_totalRemovedUsers = _totalRemovedUsers+1;
+						 }
+					 }
+				}
+			}
+			
+			public function getUser(users:Object):User
+			{
+				var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+				var index:int = _userListDP.getItemIndex(users);
+				_userListDP[index].showPos = 0;
+				_userListDP.refresh();
+				var item:User = userlistPod.getUserbyid((_userListDP[0].userId));
+				return item
+			}
+			
+			
+			public function reMoveUserFromShowMOD2(obj:Object):void
+			{
+				var showarray:Array = AppManager.getInstance().ShowUserArray;
+				
+				var showarrayG:Array = obj.array as Array;
+				var inshow:Boolean = false;
+				
+				if(showarrayG)
+				{
+					for(var g:int=0 ;g<showarrayG.length; g++)
+					{
+						if(showarrayG[g] != "default")
+						{
+							inshow = true;
+						}
+					}
+					
+					
+					if(inshow == false)
+					{
+						if(_pleaseWaitAlert)
+						{
+							PopUpManager.removePopUp(_pleaseWaitAlert);
+						}
+					}
+				}
+				
+
+				if(obj != null && showarray != null)
+				{
+					var array:Array = obj.array;
+					var userOb:Object = obj.user;
+					
+					if(_movingUser == Number(userOb.userId))
+					{
+						if(_pleaseWaitAlert)
+						{
+							PopUpManager.removePopUp(_pleaseWaitAlert);
+						}
+					}
+					
+					var postion:int;
+					
+					for (var l:int = 0 ; l < showarray.length;l++)
+					{
+						if(obj.user.userId == showarray[l])
+						{
+							//AppManager.getInstance().log("Changed "+ showarray[l]+ " to : "+ obj.prevModName+" and username is : "+AppManager.getInstance().userName);
+							postion = l+1;
+							var podToPOP :String = "video"+(l+1).toString();
+						}
+					}
+					//optimized here
+					while (postion > 6)
+					{
+						postion = postion -6;
+					}
+					
+					if(postion > 0)
+					{
+						var containerName:String = "videoPodContainer"+postion.toString();
+						var vidBox:Group = mainContainerVideoPods.getChildByName(containerName) as Group;
+						var box:RecivingPod = vidBox.getChildByName(podToPOP) as RecivingPod;
+						if(box)
+						{
+							if(box.id == podToPOP)
+							{
+								box.pos = 0;
+								box.stopVideo(userOb.userName);
+								box.destroy();
+							}
+						}
+					}
+					
+					/*for(var i:int=1 ;i<7; i++)
+					{
+						var containerName:String = "videoPodContainer"+i.toString();
+						
+						for(var k:int=0;k<mainContainerVideoPods.numChildren;k++)
+						{
+							var vidBox:Group = mainContainerVideoPods.getChildAt(k) as Group;
+							if(vidBox.id == containerName)
+							{
+								for(var j:int=0;j<vidBox.numChildren;j++)
+								{
+									var pod:RecivingPod = vidBox.getChildAt(j) as RecivingPod
+									if(pod != null)
+									{
+										if(pod.id == podToPOP)
+										{
+											var pos:Number = showarray.length;
+											pod.pos = 0;
+											pod.stopVideo(userOb.userName);
+											pod.destroy();
+											//infoBox.addUserToShow(_nc);
+										}
+									}
+								}
+							}
+						}
+					}*/
+				}
+				
+			}
+			
+			
+			
+			public function addUserToShowMod2(obj:Object):void
+			{
+				var showarray:Array = AppManager.getInstance().ShowUserArray;
+				if(obj != null)
+				{
+					var array:Array = obj.array;
+					var userOb:Object = obj.user;
+					
+					var podTopushIn :String = "video";
+					
+					var postion:int;
+					
+					for(var l:int=0 ;l<showarray.length; l++)
+					{
+						if(showarray[l] == obj.user.userId)
+						{
+							l = l+1;
+							postion = l;
+							podTopushIn = podTopushIn+l.toString();
+						}
+					}
+					
+					if(showarray.length == 0)
+					{
+						podTopushIn = "video1";	
+					}
+					
+					while (postion > 6)
+					{
+						postion = postion -6;
+					}
+					
+					if(postion > 0)
+					{
+						var containerName:String = "videoPodContainer"+postion.toString();
+						var vidBox:Group = mainContainerVideoPods.getChildByName(containerName) as Group;
+						var box:RecivingPod = vidBox.getChildByName(podTopushIn) as RecivingPod;
+						if(box.id == podTopushIn)
+						{
+							var pos:Number = showarray.length;
+							box.pos = pos;
+							box.playVideo(userOb.userId,userOb.userName,_nc,userOb.emailId,userOb.showId);
+						}
+					}
+					//optim
+					/*for(var i:int=1 ;i<7; i++)
+					{
+						var containerName:String = "videoPodContainer"+i.toString();
+						
+						for(var k:int=0;k<mainContainerVideoPods.numChildren;k++)
+						{
+							var vidBox:Group = mainContainerVideoPods.getChildAt(k) as Group;
+							if(vidBox.id == containerName)
+							{
+								for(var j:int=0;j<vidBox.numChildren;j++)
+								{
+									var pod:RecivingPod = vidBox.getChildAt(j) as RecivingPod
+									if(pod != null)
+									{
+										if(pod.id == podTopushIn)
+										{
+											var pos:Number = showarray.length;
+											pod.pos = pos;
+											pod.playVideo(userOb.userId,userOb.userName,_nc,userOb.emailId,userOb.showId);
+											//infoBox.addUserToShow(_nc);
+										}
+									}
+								}
+							}
+						}
+					}*/
+				}
+			}
+			
+			public function addUserToShow(obj:Object):void
+			{
+				
+				var count:int = 0
+				var showArr:Array = obj.array;
+				AppManager.getInstance().ShowUserArray = new Array();
+				AppManager.getInstance().ShowUserArray = showArr;
+				
+				if(_movingUser ==  obj.user.userId)
+				{
+					if(_pleaseWaitAlert)
+					{
+						PopUpManager.removePopUp(_pleaseWaitAlert);
+						_movingUser = 0;
+					}
+				}
+				
+				var actualUsers:int = 0;
+				
+				for(var conts:int=0;conts<showArr.length;conts++)
+				{
+					if(showArr[conts] != "default")
+					{
+						actualUsers = actualUsers+1;
+					}
+				}
+				
+				AppManager.getInstance().showArrPos = actualUsers;
+				
+				if(_toMovetoShowArray.length>0)
+				{
+					var showPos:int = 0;
+					for(var l:int=0 ;l<showArr.length; l++)
+					{
+						if(showArr[l] == obj.user.userId)
+						{
+							showPos = l+1;
+						}
+					}
+					if(_toMovetoShowArray[count].userId)
+					{									
+						var users:Object = userlistPod.getUserbyidAsObject(obj.user.userId);
+						var usersBefore:Object = userlistPod.getUserbyidAsObject(obj.user.userId);
+						//item.showPos = 0;
+						var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+						var index:int = _userListDP.getItemIndex(users);
+						_userListDP[index].showPos = showPos;
+						
+						_userListDP.removeItemAt(index);
+						_userListDP.addItemAt(users,0);
+						_userListDP.refresh();
+						
+						_toMovetoShowArray.removeItemAt(0);
+						var indexToremove:int = _screeningArray.getItemIndex(usersBefore);
+						if(indexToremove != -1)
+						{
+							_screeningArray.removeItemAt(indexToremove);
+						}
+						
+						if(_screeningArray.length < 25)
+						{
+							if(_screeningArray.length > 0)
+							{
+								var indexToMoveToScreening:int = _screeningArray.length + AppManager.getInstance().showArrPos;
+								if(indexToMoveToScreening < _userListDP.length)
+								{
+									var userObj:Object = _userListDP.getItemAt(indexToMoveToScreening);
+									var index3:int = -1;
+									if(userObj)
+									{
+										index3 = _userListDP.getItemIndex(userObj);
+									}
+									if(index3 != -1)
+									{
+										_screeningArray.addItem(userObj);
+									}
+								}
+							}
+						}
+						moveUserstoShow(0);
+						rearrageScreeningUsers();
+					}
+					else
+					{
+						Alert.show("user addeded diffrently")
+					}	
+				}
+			}
+			
+			protected function mainContainerVideoPods_creationCompleteHandler(event:FlexEvent):void
+			{
+				for(var i:int=1 ;i<8; i++)
+				{
+					var podToActivate:String;
+					var containerName:String = "videoPodContainer"+i.toString();
+					
+					for(var k:int=0;k<mainContainerVideoPods.numChildren;k++)
+					{
+						var vidBox:Group = mainContainerVideoPods.getChildAt(k) as Group;
+						if(vidBox != null)
+						{
+							if(vidBox.id == containerName)
+							{
+								for(var j:int=0;j<vidBox.numChildren;j++)
+								{
+									var infoBox:RecivingPod = vidBox.getChildAt(j) as RecivingPod
+									if(infoBox != null)
+									{
+										//AppManager.getInstance().log("intialised pod : "+infoBox.id);
+										infoBox.initializeVideoPod(_nc);
+										infoBox.addEventListener("audioStarted", onAudioStated);
+										infoBox.addEventListener("fullscreen", onFullscreen);
+									}
+								}
+							}
+						}
+					}
+				}	
+			}
+			
+			private function onAudioStated(e:WowzaCustomEvent):void
+			{
+				var box:RecivingPod = e.target as RecivingPod;
+				var user:String = e.eventObj.name as String;
+				if(user == box.playingUserName)
+				{
+					for(var i:int=1 ;i<7; i++)
+					{
+						var podToActivate:String;
+						var containerName:String = "videoPodContainer"+i.toString();
+						
+						for(var k:int=0;k<mainContainerVideoPods.numChildren;k++)
+						{
+							var vidBox:Group = mainContainerVideoPods.getChildAt(k) as Group;
+							if(vidBox.id == containerName)
+							{
+								for(var j:int=0;j<vidBox.numChildren;j++)
+								{
+									var infoBox:RecivingPod = vidBox.getChildAt(j) as RecivingPod
+									if(infoBox != null)
+									{
+										if(user != infoBox.playingUserName)
+										{
+											infoBox.muteAudio();
+											//AppManager.getInstance().log("audio stopped for : "+infoBox.playingUserName)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			private function onFullscreen(e:WowzaCustomEvent):void
+			{
+				for(var i1:int=1 ;i1<8; i1++)
+				{
+					var podToActivate1:String;
+					var containerName1:String = "videoPodContainer"+i1.toString();
+					
+					for(var k1:int=0;k1<mainContainerVideoPods.numChildren;k1++)
+					{
+						var vidBox1:Group = mainContainerVideoPods.getChildAt(k1) as Group;
+						if(vidBox1 != null)
+						{
+							if(vidBox1.id == containerName1)
+							{
+								for(var j1:int=0;j1<vidBox1.numChildren;j1++)
+								{
+									var infoBox1:RecivingPod = vidBox1.getChildAt(j1) as RecivingPod
+									if(infoBox1 != null)
+									{
+										if(e.eventObj.act == "enlarge" && infoBox1.pos != 0 && !isNaN(infoBox1.pos))
+										{
+											infoBox1.setAudioDisable();
+										}
+										else if(e.eventObj.act == "rest" && infoBox1.pos != 0 && !isNaN(infoBox1.pos))
+										{
+											infoBox1.setAudioenable();
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				
+				var box:RecivingPod = e.target as RecivingPod;
+				var user:String = e.eventObj.name as String;
+				if(user == box.playingUserName)
+				{
+					for(var i:int=1 ;i<7; i++)
+					{
+						var podToActivate:String;
+						var containerName:String = "videoPodContainer"+i.toString();
+						
+						for(var k:int=0;k<mainContainerVideoPods.numChildren;k++)
+						{
+							var vidBox:Group = mainContainerVideoPods.getChildAt(k) as Group;
+							if(vidBox.id == containerName)
+							{
+								for(var j:int=0;j<vidBox.numChildren;j++)
+								{
+									var infoBox:RecivingPod = vidBox.getChildAt(j) as RecivingPod
+									if(infoBox != null)
+									{
+										if(user != infoBox.playingUserName && infoBox.playingUserName != "")
+										{
+											infoBox.setFullScreenOff();
+											//AppManager.getInstance().log("fullscreen disable for : "+infoBox.playingUserName)
+										}
+										else if(user == infoBox.playingUserName && infoBox.playingUserName != "")
+										{
+											if(infoBox.videoPodAudioControl.currentState == "Unmuted")
+											{
+												infoBox.mute();
+											}
+											else
+											{
+												infoBox.unMute();
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				
+				
+			}
+			
+			
+			protected function poll_creationCompleteHandler(event:FlexEvent):void
+			{
+				poll.initialisePoll(_nc,this);
+			}
+			
+			public function disablePoll(obj:Object):void
+			{
+				poll.disablePoll(obj);
+			}
+			
+			protected function chatTextInput_enterHandler(event:FlexEvent):void{
+				/*var msg:String = chatTextInput.text;
+				if(msg != ""){
+					colour=colorPicker.selectedColor.toString(16);
+					chatTextInput.text = "";
+					sendTheMessage(msg);
+				}*/
+				var msg:String = chatTextInput.text;
+				if(msg != "")
+				{
+					colour=colorPicker.selectedColor.toString(16);
+					//_so.setProperty("chat", msg);
+					var msgComplete:String = AppManager.getInstance().userName+"/"+colour+"/"+msg+"/";
+					_so.send("addChat",msgComplete);
+					chatTextInput.text = "";
+					chatTextInput.setFocus();
+				}
+			}
+			
+			protected function chatArea_updateCompleteHandler(event:FlexEvent):void{
+				chatArea.verticalScrollPosition = chatArea.maxVerticalScrollPosition;
+			}
+			
+			public function receiveMessage(msg:String, userID:Number, privateChat:Boolean, toUserID:Number):void{
+				if(privateChat == false)
+				{
+					msg = "<p>"+msg+"</p>";
+					chatArea.htmlText += "</br>"
+					if(msg.search("Moderator")!= -1)
+					{
+						chatArea.htmlText += "<b>" + msg + "</b>";
+					}
+					else
+					{
+						chatArea.htmlText += msg;
+					}
+				}
+				else if(toUserID != 0)
+				{
+					
+				}
+			}
+			
+			protected function useAutomaticShift_clickHandler(event:MouseEvent):void
+			{
+				if(_automaticShift == true)
+				{
+					
+					_automaticShift = false
+				}
+				else
+				{
+					_automaticShift = true;
+				}
+				
+				var msg :String = "/setAutomaticShift "+_automaticShift.toString();
+				var colour:String = "FFFFFF";
+				AppManager.getInstance().log("msg is :"+msg);
+				_nc.call("sendMessage", null, msg, "#" + colour, false, 0);
+			}
+			
+			public function set automaticShift(value:Boolean):void
+			{
+				if(useAutomaticShift1)
+				{
+					useAutomaticShift1.selected = value;
+				}
+				_automaticShift = value;
+			}
+			
+			public function get automaticShift():Boolean
+			{
+				return _automaticShift;
+			}
+			
+			public function set automaticShiftReply(value:Boolean):void
+			{
+				_automaticShiftReply = value;
+			}
+			
+			public function get automaticShiftReply():Boolean
+			{
+				return _automaticShiftReply;
+			}
+			
+			
+			public function clearChat():void
+			{
+				chatArea.htmlText = "";
+			}
+			
+			private function onSendToScreening(e:WowzaCustomEvent):void
+			{
+				var user:Object = e.eventObj.user;
+				if(user != null)
+				{
+					/*if(_screeningArray.length < 4)
+					{
+						*/_screeningArray.addItem(user);
+						addUserToScreeningArea(user);
+					/*}
+					else
+					{
+						//Alert.show("Screening Area is full");
+					}*/
+				}
+			}
+			
+			private function onRemoveFromScreening(e:WowzaCustomEvent):void
+			{
+				var user:Object = e.eventObj.user;
+				if(user != null)
+				{
+					removeUserScreening(user);
+				}
+			}
+			
+			private function onRecivingPodRemoved(e:WowzaCustomEvent):void
+			{
+				var userid:Object = e.eventObj.id;
+				if(userid != null || userid != "" && AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{
+					_pleaseWaitAlert = null;
+					_pleaseWaitAlert = new CustomAlert();
+					PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+					PopUpManager.centerPopUp(_pleaseWaitAlert);
+					_movingUser = Number(userid);
+				}
+			}			
+			
+			public function addUserToScreeningArea(obj:Object):void
+			{
+				if(obj != null)
+				{
+					rearangeScreeningOrder();
+					//rearrageScreeningUsers(true);
+				}
+			}
+			
+			public function removeUserScreening(Obj:Object):void
+			{
+				if(Obj != null && _screeningArray.length > 0)
+				{
+					var index:int = _screeningArray.getItemIndex(Obj);
+					var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+					if(index != -1)
+					{
+						_screeningArray.removeItemAt(index);
+						var users:Object = userlistPod.getUserbyidAsObject(Obj.userId);
+						if(users)
+						{
+							var index2:int = _userListDP.getItemIndex(users);
+							if(index2 != -1)
+							{
+								var user:Object = _userListDP.getItemAt(index2);
+								_screeningArray.addItemAt(user,_screeningArray.length);
+							}
+						}
+						else
+						{
+							if(_screeningArray.length > 0)
+							{
+								var indexToMoveToScreening:int = _screeningArray.length + AppManager.getInstance().showArrPos;
+								if(indexToMoveToScreening < _userListDP.length)
+								{
+									var userObj:Object = _userListDP.getItemAt(indexToMoveToScreening);
+									var index3:int = -1;
+									if(userObj)
+									{
+										index3 = _userListDP.getItemIndex(userObj);
+									}
+									if(index3 != -1)
+									{
+										_screeningArray.addItem(userObj);
+									}
+								}
+							}
+						}
+						rearangeScreeningOrder();
+						//rearrageScreeningUsers(true);
+					}
+					
+					try
+					{
+						//AppManager.getInstance().log("try : "+Obj.user)
+					}
+					catch(e:Error)
+					{
+						//AppManager.getInstance().log("try : user not found")
+					}
+				}			
+			}
+			
+			
+			private function cleanAllPods():void
+			{				
+				for (var count:int = 1;count<=24;count++)
+				{
+					var podToPOP :String = "vid"+(count).toString();
+					for(var i:int=1 ;i<7; i++)
+					{
+						var containerName:String = "vidContainer"+i.toString();
+						for(var k:int=0;k<mainContainerVid.numChildren;k++)
+						{
+							var vidBox:Group = mainContainerVid.getChildAt(k) as Group;
+							if(vidBox.id == containerName)
+							{
+								for(var j:int=0;j<vidBox.numChildren;j++)
+								{
+									var infoBox:VideoPodUserInfo = vidBox.getChildAt(j) as VideoPodUserInfo
+									if(infoBox != null)
+									{
+										if(infoBox.id == podToPOP)
+										{										
+											infoBox.disablePod();
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			private function rearrageScreeningUsers(refresh:Boolean = false):void
+			{	
+				//cleanAllPods();
+				for (var count:int = 0;count< 24;count++)
+				{
+					if(_screeningArray.length > count)
+					{
+						var obj:Object = _screeningArray[count] as Object;
+						if(obj != null)
+						{
+							var userOb:Object = obj;
+							var user:User = userlistPod.getUserbyid(userOb.userId);					
+							var podTopushIn :String = "vid";
+							var postion:int = 0;
+							var posOld:int = 0;
+							//optimize here
+							for(var l:int=0 ;l<24; l++)
+							{
+								if(l < _screeningArray.length)
+								{
+									if(_screeningArray[l] is Object && _screeningArray[l] != "default")
+									{
+										if(_screeningArray[l].userId == user.userId)
+										{
+											l = l+1;
+											postion = l;
+											podTopushIn = podTopushIn+l.toString();
+											user.screeningPos = l;
+											break;
+										}
+									}
+								}
+							}
+							
+							if(_screeningArray.length == 0)
+							{
+								podTopushIn = "vid1";
+								user.showPos = 1;
+							}
+							
+							while (postion > 6)
+							{
+								postion = postion - 6;
+							}
+							
+							if(postion > 0)
+							{
+								var containerName:String = "vidContainer"+postion.toString();
+								var vidBox:Group = mainContainerVid.getChildByName(containerName) as Group;
+								var infoBox:VideoPodUserInfo = vidBox.getChildByName(podTopushIn) as VideoPodUserInfo;
+								if(infoBox.id == podTopushIn && infoBox.userID != user.userId)
+								{
+									infoBox._nc = _nc;
+									var users:Object = userlistPod.getUserbyidAsObject(userOb.userId);
+									var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+									var index:int = _userListDP.getItemIndex(users);
+									_userListDP[index].screeningPos = postion;
+									_userListDP.refresh();
+									infoBox.userObject = user;
+								}
+							}
+							/*for(var i:int=1 ;i<7; i++)
+							{
+								var containerName:String = "vidContainer"+i.toString();
+								for(var k:int=0;k<mainContainerVid.numChildren;k++)
+								{
+									var vidBox:Group = mainContainerVid.getChildAt(k) as Group;
+									if(vidBox.id == containerName)
+									{
+										for(var j:int=0;j<vidBox.numChildren;j++)
+										{
+											var infoBox:VideoPodUserInfo = vidBox.getChildAt(j) as VideoPodUserInfo
+											if(infoBox != null)
+											{
+												if(infoBox.id == podTopushIn && infoBox.userID != user.userId)
+												{
+													infoBox._nc = _nc;
+													
+													var users:Object = userlistPod.getUserbyidAsObject(userOb.userId);
+													
+													var _userListDP:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+													var index:int = _userListDP.getItemIndex(users);
+													_userListDP[index].screeningPos = postion;
+													_userListDP.refresh();
+													infoBox.userObject = user;
+												}
+											}
+										}
+									}
+								} 
+							}*/
+						}
+					}
+					else
+					{
+						if(refresh)
+						{
+							var podToPOPL :String = "vid"+(count+1).toString();
+							posOld = count+1;
+							while (posOld > 6)
+							{
+								posOld = posOld -6;
+							}
+							
+							containerName = "";
+							vidBox = null;
+							infoBox = null;
+							
+							if(posOld > 0)
+							{
+								containerName = "vidContainer"+posOld.toString();
+								vidBox = mainContainerVid.getChildByName(containerName) as Group;
+								infoBox = vidBox.getChildByName(podToPOPL) as VideoPodUserInfo;
+								if(infoBox)
+								{
+									if(infoBox.id == podToPOPL)
+									{
+										infoBox.disablePod();
+									}
+								}
+							}
+							
+							/*var podToPOPL :String = "vid"+(count+1).toString();
+							for(var lK:int=1 ;lK<7; lK++)
+							{
+								var containerNameL:String = "vidContainer"+lK.toString();
+								for(var kl:int=0;kl<mainContainerVid.numChildren;kl++)
+								{
+									var vidBoxL:Group = mainContainerVid.getChildAt(kl) as Group;
+									if(vidBoxL.id == containerNameL)
+									{
+										for(var jl:int=0;jl<vidBoxL.numChildren;jl++)
+										{
+											var infoBoxL:VideoPodUserInfo = vidBoxL.getChildAt(jl) as VideoPodUserInfo
+											if(infoBoxL != null)
+											{
+												if(infoBoxL.id == podToPOPL)
+												{										
+													infoBoxL.disablePod();
+												}
+											}
+										}
+									}
+								}						
+							}*/
+						}
+					}
+				}
+				if(_userListDP)
+				{
+					_userListDP.refresh();
+				}
+			}
+			
+			
+			private function onMoveUsersToShow(e:WowzaCustomEvent):void
+			{
+				var usersToget:int = e.eventObj.no as int;
+				_pleaseWaitAlert = null;
+				_pleaseWaitAlert = new CustomAlert();
+				PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+				PopUpManager.centerPopUp(_pleaseWaitAlert);
+				moveUserstoShow(usersToget);
+			}
+			
+			private function onScreeningOrderChanged(e:WowzaCustomEvent):void
+			{
+				rearangeScreeningOrder();
+			}
+			
+			public  function rearangeScreeningOrder():void
+			{
+				var dp:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection
+				for(var count:int = 0;count<_screeningArray.length;count++)
+				{
+					_screeningArray[count] = null;
+					var userInShow:int = 0;
+					userInShow = AppManager.getInstance().showArrPos;
+					_screeningArray[count] = dp[count+userInShow];
+				}
+				//rearangeScreeningOrder();
+				rearrageScreeningUsers(true); 
+			}
+			
+			private function moveUserstoShow(no:int):void
+			{
+				var actualUsers:int = 0;
+				var showArray:Array = AppManager.getInstance().ShowUserArray;
+				for(var conts:int=0;conts<showArray.length;conts++)
+				{
+					if(showArray[conts] != "default")
+					{
+						actualUsers = actualUsers+1;
+					}
+				}
+				
+				var awailableUsers:Number =  0;
+				var usersToget:int = 0;
+				
+				if(_screeningArray.length >= 24+actualUsers)
+				{
+					awailableUsers = _screeningArray.length - (_screeningArray.length-24);
+				}				
+				else 
+				{
+					awailableUsers = _screeningArray.length;
+				}
+				
+				if(awailableUsers < no)
+				{
+					usersToget = awailableUsers;
+				}
+				else
+				{
+					usersToget = no;
+				}
+				 
+				
+				if(_toMovetoShowArray.length == 0 && usersToget != 0)
+				{
+					for(var i:int = 0;i<usersToget;i++)
+					{
+						var showArr:Array = new Array();
+						showArr = AppManager.getInstance().ShowUserArray;
+						
+						var indexTget:int = i+AppManager.getInstance().showArrPos;
+						
+						var userArray:ArrayCollection = userlistPod.userList.dataProvider as ArrayCollection;
+						
+						if(indexTget >= userArray.length)
+						{
+							break;
+						}
+						else
+						{
+							var user:Object = userArray.getItemAt(indexTget);	
+							if(user && _toMovetoShowArray.length < 25)
+							{
+								_toMovetoShowArray.addItem(user);
+							}
+						}
+						
+					}
+				}
+
+				for(var count:int = 0;count<_toMovetoShowArray.length;count++)
+				{
+					var userTosend:Object = _toMovetoShowArray[0];
+					if(userTosend != null)
+					{						
+						sendTheMessage("/MoveToShow/"+userTosend.userId.toString()+"/"+userTosend.emailId+"/"+userTosend.showId);
+						break;
+					}
+					else
+					{
+						
+					}
+				}
+				
+				if(_toMovetoShowArray.length == 0)
+				{ 
+					if(_pleaseWaitAlert)
+					{
+						PopUpManager.removePopUp(_pleaseWaitAlert);
+					}
+					//rearrageScreeningUsers(true);
+					rearangeScreeningOrder();
+				}
+			}
+			
+			protected function removeAllUsers_clickHandler(event:MouseEvent):void
+			{
+				removeAllUsersFromShow();
+			}
+			
+			public function removeAllUsersFromShow():void
+			{
+				var showArray:Array = AppManager.getInstance().ShowUserArray;
+				var isInShow:Boolean = false;
+				/*if(useAutomaticShift)
+				{
+				useAutomaticShift.selected = false;
+				}
+				if(useAutomaticShift1)
+				{
+				useAutomaticShift1.selected = false;
+				}*/
+				/*var msg :String = "/setAutomaticShift "+false;
+				var colour:String = "FFFFFF";
+				AppManager.getInstance().log("msg is :"+msg);
+				_nc.call("sendMessage", null, msg, "#" + colour, false, 0);*/
+				
+				for(var f:int=0 ;f<showArray.length; f++)
+				{
+					if(showArray[f] != "default")
+					{
+						isInShow = true;
+						break;
+					}
+				}
+				
+				/*if(AppManager.getInstance().userRole == UserRole.MODERATOR1)
+				{
+					AppManager.getInstance().ShowUserArray;
+					if(isInShow)
+					{
+						_pleaseWaitAlert = null;
+						_pleaseWaitAlert = new CustomAlert()
+						PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+						PopUpManager.centerPopUp(_pleaseWaitAlert);
+					}
+					
+					for(var count:int=0 ;count<showArray.length; count++)
+					{
+						var userid:String = showArray[count];
+						var user:Object = userlistPod.getUserbyidAsObject(userid);
+						if(user != null)
+						{
+							if(user.userId != null && _nc != null && AppManager.getInstance().showID != 0 && user.emailId != "")
+							{
+								var msg1 :String = "/MoveUserToGreenRoom/"+user.userId+"/"+user.emailId+"/"+AppManager.getInstance().showID;
+								var colour1:String = "FFFFFF";
+								AppManager.getInstance().log("msg is :"+msg1);
+								_nc.call("sendMessage", null, msg1, "#" + colour1, user.userId, AppManager.getInstance().showID, false, 0);
+							}
+						}
+					}
+				}
+				else*/ if(AppManager.getInstance().userRole == UserRole.MODERATOR2)
+				{		
+					if(_automaticShift == true && _automaticShiftReply == false)
+					{
+						var msg2 :String = "/activeAutomaticShift ";
+						var colour2:String = "FFFFFF";
+						AppManager.getInstance().log("msg is activateAutomaticShift :"+msg2);
+						_nc.call("sendMessage", null, msg2, "#" + colour2, false, 0);
+					}
+					else if(_automaticShiftReply == true || _automaticShift == false)
+					{
+						isInShow = false;
+						for(var i:int=1 ;i<7; i++)
+						{
+							var podToActivate:String;
+							var containerName:String = "videoPodContainer"+i.toString();
+							
+							for(var k:int=0;k<mainContainerVideoPods.numChildren;k++)
+							{
+								var vidBox:Group = mainContainerVideoPods.getChildAt(k) as Group;
+								if(vidBox.id == containerName)
+								{
+									for(var j:int=0;j<vidBox.numChildren;j++)
+									{
+										var infoBox:RecivingPod = vidBox.getChildAt(j) as RecivingPod
+										if(infoBox != null)
+										{
+											if(infoBox.playingUserName != null && infoBox.playingUserName != "")
+											{
+												infoBox.removeThisPod();
+												isInShow = true;
+											}
+										}
+									}
+								}
+							}
+						}
+						
+						if(isInShow)
+						{
+							_pleaseWaitAlert = null;
+							_pleaseWaitAlert = new CustomAlert()
+							PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+							PopUpManager.centerPopUp(_pleaseWaitAlert);
+						}
+					}
+				}
+					
+			}
+			
+			protected function initautomaticShift():void
+			{
+				var msg :String = "/setAutomaticShift "+_automaticShift.toString();
+				var colour:String = "FFFFFF";
+				AppManager.getInstance().log("msg is :"+msg);
+				_nc.call("sendMessage", null, msg, "#" + colour, false, 0);
+			}
+			
+			
+			public function onRemoveUser(disconnected:Boolean = false):void
+			{
+				_automaticShift = useAutomaticShift1.selected;
+				if(_automaticShiftReply == false)
+				{
+					if(_automaticShift && disconnected == false)
+					{
+						_totalRemovedUsers = _totalRemovedUsers + 1;
+					}
+					else if(_automaticShift && disconnected == true)
+					{
+						_totalDisconnectedUsers = _totalDisconnectedUsers+ 1;
+					}					
+					_timerRemove.addEventListener(TimerEvent.TIMER_COMPLETE,onCompletedTimer);					
+					if(!_timerRemove.running)
+					{
+						var oldArr1:Array = AppManager.getInstance().ShowUserArray;
+						var oldArr2:Array = AppManager.getInstance().oldShowUserArray;
+						if(oldArr2.length == 0)
+						{
+							AppManager.getInstance().oldShowUserArray = oldArr1;
+						}
+						var showArray:Array = AppManager.getInstance().ShowUserArray;
+						for(var conts:int=0;conts<showArray.length;conts++)
+						{
+							if(showArray[conts] != "default")
+							{
+								actualUsers = actualUsers+1;
+							}
+						}
+						if(_oldArray.length == 0)
+						{
+							_oldArray = showArray;
+						}
+						
+						if(_oldScreeningArray.length == 0)
+						{
+							for each (var item:Object in _screeningArray)
+							{
+								_oldScreeningArray.addItem(item);
+							}
+						}
+						_timerRemove.start();
+					}
+					awailableUsers = userlistPod.userListDP.length - actualUsers;
+					if(_totalRemovedUsers>awailableUsers)
+					{
+						_totalRemovedUsers = awailableUsers;
+					}
+				}
+				else if(_automaticShiftReply == true)
+				{
+					var awailableUsers:Number =  0;
+					var usersToget:int = 0;
+					var oldArr3:Array = AppManager.getInstance().ShowUserArray;
+					var oldArr4:Array = AppManager.getInstance().oldShowUserArray;
+					if(oldArr4.length == 0)
+					{
+						AppManager.getInstance().oldShowUserArray = oldArr3;
+					}
+					if(_screeningArray.length >= 24+_users)
+					{
+						var showArray2:Array = AppManager.getInstance().ShowUserArray;
+						for(conts=0;conts<showArray2.length;conts++)
+						{
+							if(showArray2[conts] != "default")
+							{
+								actualUsers = actualUsers+1;
+							}
+						}
+						if(_oldArray.length == 0)
+						{
+							_oldArray = showArray2;
+						}
+						
+						if(_oldScreeningArray.length == 0)
+						{
+							for each (var item2:Object in _screeningArray)
+							{
+								_oldScreeningArray.addItem(item2);
+							}
+						}
+					}				
+					
+					if(_users == 0)
+					{
+						var oldArray:Array = AppManager.getInstance().oldShowUserArray;
+						for(var counts:int = 0 ; counts < oldArray.length; counts++)
+						{
+							if(String(oldArray[counts])!= "default"){
+								_users = _users+1;
+							}
+						}
+						_totalRemovedUsers = (_screeningArray.length);
+						if(_totalRemovedUsers > (_screeningArray.length-_users) && (_screeningArray.length-_users) > 0)
+						{
+							_totalRemovedUsers = (_screeningArray.length-_users);
+						}
+						
+					}
+					
+					_users = _users - 1;
+					
+					if(_users == 0)
+					{
+						shiftAndRemoveUserNow();
+					}
+					
+				}
+			}
+			
+			private function shiftAndRemoveUserNow():void
+			{
+				
+				_timerRemove.addEventListener(TimerEvent.TIMER_COMPLETE,onCompletedTimer);
+				if(!_timerRemove.running)
+				{
+					_timerRemove.start();
+				}
+			}
+			
+			private function onCompletedTimer(e:TimerEvent):void
+			{
+				pushRemovedUsers();
+				if(_timerRemove)
+				{
+					_timerRemove.stop();
+					_timerRemove.removeEventListener(TimerEvent.TIMER_COMPLETE,onCompletedTimer);
+				}
+			}
+			
+			private function pushRemovedUsers():void
+			{
+				if(useAutomaticShift)
+					_automaticShift = useAutomaticShift.selected;
+				if(useAutomaticShift1)
+					_automaticShift = useAutomaticShift1.selected
+				
+				if(_automaticShift == true  && _automaticShiftReply == false)
+				{
+					if(_screeningArray.length > 1 && _totalDisconnectedUsers == 0)
+					{
+						var __actualUsers:int = 0;
+						var showArray:Array = AppManager.getInstance().oldShowUserArray;
+						for(var conts:int=0;conts<showArray.length;conts++)
+						{
+							if(showArray[conts] != "default")
+							{
+								__actualUsers = __actualUsers+1;
+							}
+						}
+						for(var counts:int = 0 ; counts < _totalRemovedUsers; counts++)
+						{
+							//if(_screeningArray.length > counts+_totalRemovedUsers && (4+__actualUsers) < userlistPod.userListDP.length)
+							//{
+								/*if(checkInOldArray(_screeningArray[counts+_totalRemovedUsers]) == false)
+								{
+									_toMovetoShowArray.addItem(_screeningArray[counts+_totalRemovedUsers]); 
+								}*/
+								//_toMovetoShowArray.addItem(_screeningArray[counts+_totalRemovedUsers]);
+							//}
+							//else if(_screeningArray.length > counts-1 && (counts-1) > 0  && (4+__actualUsers) < userlistPod.userListDP.length)
+							//{
+								/*if(checkInOldArray(_screeningArray[counts-1]) == false)
+								{
+									_toMovetoShowArray.addItem(_screeningArray[counts-1]);
+								}	*/
+								//_toMovetoShowArray.addItem(_screeningArray[counts-1]);
+							//}
+							//else if(_oldScreeningArray.length > 0)
+							//{
+								//_toMovetoShowArray.addItem(_oldScreeningArray[counts])
+							//}
+							
+							if((_screeningArray.length+__actualUsers) <= userlistPod.userListDP.length || _totalRemovedUsers < _screeningArray.length)
+							{
+								if(_totalRemovedUsers > 1)
+								{
+									_toMovetoShowArray.addItem(userlistPod.userListDP[counts+_totalRemovedUsers]);
+								}
+								else
+								{
+									_toMovetoShowArray.addItem(_screeningArray[1]);
+								}
+							}
+							else if(_oldScreeningArray.length > 0)
+							{
+								_toMovetoShowArray.addItem(_oldScreeningArray[counts])
+							}
+						}
+						_oldScreeningArray = new ArrayCollection();
+						moveUserstoShow(_totalRemovedUsers);
+						awailableUsers = 0;
+						actualUsers = 0;
+						_totalRemovedUsers = 0;
+						_totalDisconnectedUsers = 0;
+						_pleaseWaitAlert = null;
+						if(_toMovetoShowArray.length > 0)
+						{
+							_pleaseWaitAlert = new CustomAlert()
+							PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+							PopUpManager.centerPopUp(_pleaseWaitAlert);
+							rearangeScreeningOrder();
+						}
+					}
+					else if(_screeningArray.length > 1 && _totalDisconnectedUsers != 0)
+					{
+						for(counts = 0; counts < _totalDisconnectedUsers; counts++)
+						{
+							if(_screeningArray.length > counts)
+							{
+								_toMovetoShowArray.addItem(_screeningArray[counts]); 
+							}
+						}
+						moveUserstoShow(_totalDisconnectedUsers);
+						_totalRemovedUsers = 0;
+						_totalDisconnectedUsers = 0;
+						_pleaseWaitAlert = null;
+						if(_toMovetoShowArray.length > 0)
+						{
+							_pleaseWaitAlert = new CustomAlert()
+							PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+							PopUpManager.centerPopUp(_pleaseWaitAlert);
+							rearangeScreeningOrder();
+						}
+					}
+					
+				}
+				else if(_automaticShift == true && _automaticShiftReply == true)
+				{
+					if(_users == 0)
+					{
+						var oldArray:Array = AppManager.getInstance().oldShowUserArray;
+						for(counts = 0 ; counts < oldArray.length; counts++)
+						{
+							if(String(oldArray[counts])!= "default"){
+								_users = _users+1;
+							}
+						}
+						var totalUser:int = userlistPod.userListDP.length;
+						if((totalUser-_users) <= _users)
+						{
+							_totalRemovedUsers = (totalUser-_users);
+						}
+						else
+						{
+							_totalRemovedUsers = _users;
+						}
+					}
+					
+					var _totalRemovedUsersLastVal:int = _totalRemovedUsers;
+					
+					if(_screeningArray.length > 1)
+					{			
+						var __actualUsers2:int = 0;
+						var showArray2:Array = AppManager.getInstance().oldShowUserArray;
+						for(conts=0;conts<showArray2.length;conts++)
+						{
+							if(showArray2[conts] != "default")
+							{
+								__actualUsers2 = __actualUsers2+1;
+							}
+						}
+						/*if (_totalRemovedUsers > 0 && _users < _screeningArray.length && (4+_users) < userlistPod.userListDP.length)
+						{
+							_toMovetoShowArray.addItem(_screeningArray[_users]);
+							_users = _users+1;
+							_totalRemovedUsers = _totalRemovedUsers -1;
+						}
+						else
+						{
+							for each (var item2:Object in _oldScreeningArray)
+							{
+								_toMovetoShowArray.addItem(item2);
+							}
+							_users = _users+1;
+							_totalRemovedUsers = _totalRemovedUsers -1;
+						}*/
+						if((_screeningArray.length+__actualUsers2) < userlistPod.userListDP.length || _totalRemovedUsers < _screeningArray.length)
+						{
+							while (_totalRemovedUsers > 0)
+							{
+								_toMovetoShowArray.addItem(userlistPod.userListDP[_users]);
+								_users = _users+1;
+								_totalRemovedUsers = _totalRemovedUsers -1;
+							}
+							
+						}
+						else if(_oldScreeningArray.length > 0)
+						{
+							for each (var item2:Object in _oldScreeningArray)
+							{
+								_toMovetoShowArray.addItem(item2);
+							}
+							_users = _users+1;
+							_totalRemovedUsers = _totalRemovedUsers -1;
+						}
+						if(_totalRemovedUsersLastVal > 0)
+						{
+							_oldScreeningArray = new ArrayCollection();
+							moveUserstoShow(_totalRemovedUsersLastVal);
+							_totalRemovedUsers = 0;
+							awailableUsers = 0;
+							actualUsers = 0;
+							_users = 0;
+							_totalDisconnectedUsers = 0;
+							_pleaseWaitAlert = null;
+							_pleaseWaitAlert = new CustomAlert()
+							PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+							PopUpManager.centerPopUp(_pleaseWaitAlert);
+						}
+					}
+				}
+				AppManager.getInstance().oldShowUserArray = new Array();
+				_automaticShiftReply = false;
+				_totalRemovedUsers = 0;
+				_users = 0;
+				_totalDisconnectedUsers = 0;
+			}
+			
+			private function checkInOldArray(obj:Object):Boolean
+			{
+				var boo:Boolean = false;
+				for(var counts:int = 0 ; counts < _oldArray.length; counts++)
+				{
+					var user:Number = (_oldArray[counts]);
+					if(Number(user) == (obj.userId))
+					{
+						boo = true;
+						break;
+					}
+				}
+				return boo;
+			}
+			
+			public function addWaitPopUp():void
+			{
+				_pleaseWaitAlert = null;
+				_pleaseWaitAlert = new CustomAlert()
+				PopUpManager.addPopUp(_pleaseWaitAlert,this,true);
+				PopUpManager.centerPopUp(_pleaseWaitAlert);
+			}
+			
+			public function removeWaitPopUp():void
+			{
+				PopUpManager.removePopUp(_pleaseWaitAlert);
+			}
+			
+			public function resetArrayToShow():void
+			{
+				_toMovetoShowArray = new ArrayCollection();
+			}
+			
+			protected function chatArea_changeHandler(event:Event):void
+			{
+				chatArea.htmlText += "</br><br>" 
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:Label top="8" color="Black" fontSize="16" horizontalCenter="0"
+			 text="Welcome {_userName}!!"/>
+	<s:Group id="mainContainerMod2" includeIn="MOD2" width="100%" height="100%">
+		<s:TabBar id="tabs" left="8" y="2" dataProvider="{vs}"/>
+		<s:HGroup width="100%"  right="5" top="2" horizontalAlign="right" paddingRight="10">
+			<s:Button id="removeAllUsers2" label="Remove All"
+					  click="removeAllUsers_clickHandler(event)"/>
+			<s:CheckBox id="useAutomaticShift" visible="true" label="Automatic Shift" color="Black" click="useAutomaticShift_clickHandler(event)" selected="false"/>
+			<s:Button id="logoutButton2" label="Logout" click="logoutButton_clickHandler(event)"/>
+		</s:HGroup>
+		<mx:ViewStack id="vs" width="98%" height="95%" left="8" y="23">
+			<s:NavigatorContent label="Users"  width="100%" height="100%">
+				<s:BorderContainer width="100%" height="100%" borderWeight="2" cornerRadius="3" dropShadowVisible="true">
+					<s:Group id="mainContainerVideoPods" width="100%" height="100%" creationComplete="mainContainerVideoPods_creationCompleteHandler(event)">
+						<s:layout>
+							<s:HorizontalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<s:Group width="100%" height="100%" id="videoPodContainer1" name="videoPodContainer1">
+							<s:layout>
+								<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+							</s:layout>
+							<VideoPods:RecivingPod id="video1" name="video1" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video7" name="video7" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video13" name="video13" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video19" name="video19" width="212" height="150"/>
+						</s:Group>
+						<s:Group width="100%" height="100%" id="videoPodContainer2" name="videoPodContainer2">
+							<s:layout>
+								<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+							</s:layout>
+							<VideoPods:RecivingPod id="video2" name="video2" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video8" name="video8" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video14" name="video14" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video20" name="video20" width="212" height="150"/>
+							
+						</s:Group>
+						<s:Group width="100%" height="100%" id="videoPodContainer3" name="videoPodContainer3">
+							<s:layout>
+								<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+							</s:layout>
+							<VideoPods:RecivingPod id="video3" name="video3" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video9" name="video9" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video15" name="video15" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video21" name="video21" width="212" height="150"/>
+							
+						</s:Group>
+						<s:Group width="100%" height="100%" id="videoPodContainer4" name="videoPodContainer4">
+							<s:layout>
+								<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+							</s:layout>
+							<VideoPods:RecivingPod id="video4" name="video4" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video10" name="video10" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video16" name="video16" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video22" name="video22" width="212" height="150"/>
+						</s:Group>
+						<s:Group width="100%" height="100%" id="videoPodContainer5" name="videoPodContainer5">
+							<s:layout>
+								<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+							</s:layout>
+							<VideoPods:RecivingPod id="video5" name="video5" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video11" name="video11" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video17" name="video17" width="212" height="150"/>
+							<VideoPods:RecivingPod id="video23" name="video23" width="212" height="150"/>
+							
+						</s:Group>
+						<s:Group width="100%" height="100%" id="videoPodContainer6" name="videoPodContainer6">
+							<s:layout>
+								<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+							</s:layout>
+							<VideoPods:RecivingPod name="video6" id="video6" width="212" height="150"/>
+							<VideoPods:RecivingPod name="video12" id="video12" width="212" height="150"/>
+							<VideoPods:RecivingPod name="video18" id="video18" width="212" height="150"/>
+							<VideoPods:RecivingPod name="video24" id="video24" width="212" height="150"/>
+						</s:Group>
+					</s:Group>
+				</s:BorderContainer>
+			</s:NavigatorContent>
+			<s:NavigatorContent label="Poll"  width="100%" height="100%">
+				<s:BorderContainer width="100%" height="100%" borderWeight="2" cornerRadius="3" dropShadowVisible="true">
+					<s:SkinnableContainer skinClass="skins.GropSkin" height="100%" width="100%">
+						<s:layout>
+							<s:HorizontalLayout verticalAlign="middle" horizontalAlign="left"/>
+						</s:layout>
+						<components:ManagePolls id="poll" height="100%" width="100%" creationComplete="poll_creationCompleteHandler(event)"/>
+					</s:SkinnableContainer>
+				</s:BorderContainer>
+			</s:NavigatorContent>
+		</mx:ViewStack>
+	</s:Group>
+	<s:Group id="mainContainerMOD1" includeIn="MOD1" width="100%" height="100%">
+		<s:layout>
+			<s:HorizontalLayout horizontalAlign="center" verticalAlign="middle"/>
+		</s:layout>
+		<s:Group height="100%" width="33%" id="videoContainer">
+			<s:layout>
+				<s:VerticalLayout paddingTop="10" horizontalAlign="center" verticalAlign="middle"/>
+			</s:layout>
+			<s:Group height="100%" width="100%">
+				<s:layout>
+					<s:VerticalLayout horizontalAlign="center" verticalAlign="middle"/>
+				</s:layout>
+				<components:UserList id="userlistPod" height="70%" width="100%" creationComplete="userlistPod_creationCompleteHandler(event)"/>
+				<s:Group height="30%" width="100%">
+					<s:layout>
+						<s:VerticalLayout paddingTop="5" paddingLeft="5" paddingRight="5" horizontalAlign="center" verticalAlign="middle"/>
+					</s:layout>
+					<mx:TextArea id="chatArea" change="chatArea_changeHandler(event)" editable="false" width="100%" height="85%" color="0x000000" updateComplete="chatArea_updateCompleteHandler(event)"/>
+					<s:Spacer width="50"/>
+					<s:Group height="10%" width="100%">
+						<s:layout>
+							<s:HorizontalLayout paddingBottom="10" paddingLeft="5" paddingRight="5" horizontalAlign="center" verticalAlign="bottom"/>
+						</s:layout>
+						<s:TextInput id="chatTextInput" width="80%" enter="chatTextInput_enterHandler(event)"/>
+						<s:Button id="sendButton" label="Send" click="sendButton_clickHandler(event)"/>
+						<mx:ColorPicker id="colorPicker"/>
+					</s:Group>
+				</s:Group>
+			</s:Group>
+		</s:Group>
+		<s:Group height="100%" width="67%" id="componetContainer">
+			<s:layout>
+				<s:VerticalLayout horizontalAlign="right" verticalAlign="middle"/>
+			</s:layout>
+			<s:HGroup right="5" top="5" paddingTop="5">
+				<s:CheckBox id="useAutomaticShift1" label="Automatic Shift"
+							color="Black" visible="true" click="useAutomaticShift_clickHandler(event)" selected="true"/>
+				<s:Button id="removeAllUsers" label="Remove All" visible="false" click="removeAllUsers_clickHandler(event)"/>
+				<s:Button id="logoutButton" label="Logout" click="logoutButton_clickHandler(event)"/>
+			</s:HGroup>
+			<s:Group height="100%" width="100%" id="compContainer">
+				<s:layout>
+					<s:HorizontalLayout horizontalAlign="center" paddingBottom="5" paddingLeft="2"
+										paddingRight="5" verticalAlign="middle"/>
+				</s:layout>
+				<s:Group id="mainContainerVid" width="60%" height="100%">
+					<s:layout>
+						<s:HorizontalLayout verticalAlign="middle" horizontalAlign="center"/>
+					</s:layout>
+					<s:Group id="vidContainer1" name="vidContainer1" width="100%" height="100%">
+						<s:layout>
+							<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<VideoPods:VideoPodUserInfo name="vid1" id="vid1" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid7" id="vid7" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid13" id="vid13" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid19" id="vid19" width="165" height="146"/>
+					</s:Group>
+					<s:Group id="vidContainer2" name="vidContainer2" width="100%" height="100%">
+						<s:layout>
+							<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<VideoPods:VideoPodUserInfo name="vid2" id="vid2" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid8" id="vid8" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid14" id="vid14" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid20" id="vid20" width="165" height="146"/>
+						
+					</s:Group>
+					<s:Group id="vidContainer3" name="vidContainer3" width="100%" height="100%">
+						<s:layout>
+							<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<VideoPods:VideoPodUserInfo name="vid3" id="vid3" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid9" id="vid9" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid15" id="vid15" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid21" id="vid21" width="165" height="146"/>
+						
+					</s:Group>
+					<s:Group  id="vidContainer4" name="vidContainer4" width="100%" height="100%">
+						<s:layout>
+							<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<VideoPods:VideoPodUserInfo name="vid4" id="vid4" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid10" id="vid10" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid16" id="vid16" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid22" id="vid22" width="165" height="146"/>
+					</s:Group>
+					<s:Group id="vidContainer5" name="vidContainer5" width="100%" height="100%">
+						<s:layout>
+							<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<VideoPods:VideoPodUserInfo name="vid5" id="vid5" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid11" id="vid11" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid17" id="vid17" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid23" id="vid23" width="165" height="146"/>
+						
+					</s:Group>
+					<s:Group id="vidContainer6" name="vidContainer6" width="100%" height="100%">
+						<s:layout>
+							<s:VerticalLayout verticalAlign="middle" horizontalAlign="center"/>
+						</s:layout>
+						<VideoPods:VideoPodUserInfo name="vid6" id="vid6" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid12" id="vid12" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid18" id="vid18" width="165" height="146"/>
+						<VideoPods:VideoPodUserInfo name="vid24" id="vid24" width="165" height="146"/>
+					</s:Group>
+				</s:Group>
+			</s:Group>
+		</s:Group>
+	</s:Group>
+</s:Group>

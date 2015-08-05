@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="160" height="140" xmlns:components="components.*"
+		 creationComplete="initializeVideoPod()">
+	
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			import com.encast.WowzaCustomEvent;
+			
+			import valueObjects.User;
+			
+			
+			private var _userID:Number;
+			private var _userName:String;
+			private var _city:String;
+			private var _age:Number;
+			private var _pos:Number=0;
+			private var _userObject:User;
+			private var _vid:Video;
+			
+			private var _so:SharedObject;
+			private var _videoPod:VideoPod;
+			public var _nc:NetConnectionManager
+			private var _ns:NetStream;
+			
+			
+			[Bindable]
+			public var title:String;
+			
+			public function destroy():void
+			{
+				if(userName)
+				{
+					stopVideo(userName)
+				}
+				if(nameLabel && cityLabel && posLabel)
+				{
+					nameLabel.text = "";
+					cityLabel.text = "";
+					posLabel.text = "";
+				}
+				if(glow && unglow)
+				{
+					glow.end();
+					glow.play();
+					unglow.play();
+				}
+				if(_userID && _pos && title && _userName)
+				{
+					_userName = "";
+					title = "";
+					_userID = 0;
+					_pos = 0;
+				}
+				if(userOptionBtn && chatButton)
+				{
+					userOptionBtn.enabled = false;
+					chatButton.enabled = false;
+				}
+			}
+			
+			[Bindable]
+			public function get userName():String
+			{
+				return _userName;
+			}
+			[Bindable]
+			public function get pos():Number
+			{
+				return _pos;
+			}
+			
+			public function get userID():Number
+			{
+				return _userID;
+			}
+			[Bindable]
+			public function get city():String
+			{
+				return _city;
+			}
+			
+			public function set city(value:String):void
+			{
+				_city = value;
+			}
+			
+			public function set userName(value:String):void
+			{
+				_userName = value;
+			}
+			
+			public function set pos(value:Number):void
+			{
+				_pos = value;
+			} 
+			
+			private function onSync(e:SyncEvent):void
+			{
+				if(_so.data.publishingUserID != null && _so.data.publishingUserID != undefined)
+				{
+					if(_so.data.publishingUserID == userID)
+					{
+						_so.setProperty("showPos", pos);
+					}
+				}
+				_so.removeEventListener(SyncEvent.SYNC, onSync);
+			}
+			
+			public function set userID(value:Number):void
+			{
+				_userID = value;
+			}
+			
+			protected function userOptionBtn_clickHandler(event:MouseEvent):void
+			{
+				if(_userID != 0 && !isNaN(_userID))
+				{
+					var obj:Object = new Object();
+					obj.userID = _userID;
+					var eve:Event = new WowzaCustomEvent("openModWindow",true,true,obj);
+					dispatchEvent(eve);
+				}
+			}
+			
+			public function disablePod():void
+			{
+				stopVideo(userName);
+				if(_ns)
+				{
+					_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+				}
+				userID =  0;
+				userName =  "";
+				city =  "";
+				pos = 0;
+				_userObject = new User();
+				userOptionBtn.enabled = false;
+				chatButton.enabled = false;
+			}
+			
+			public function set userObject(value:Object):void
+			{
+				if(value != null)
+				{
+					try
+					{
+						userOptionBtn.enabled = true;
+						chatButton.enabled = true;
+						glow.end();
+						glow.play();
+						unglow.play();
+						_so = SharedObject.getRemote("userVideos", _nc.uri, true);
+						_so.addEventListener(SyncEvent.SYNC, onSync);
+						_videoPod = new VideoPod();
+						_videoPod.initializeVideoPod(_nc);
+						_so.client = _videoPod;
+						_so.connect(_nc);
+						
+						_userObject = new User();
+						
+						userID =  value.userId;
+						userName =  value.userName;
+						city =  value.city;
+						pos = value.showPos;
+						
+						if(_vid)
+						{
+							_vid.attachNetStream(null);
+							_vid.clear();
+							_vid.visible = false;
+							videoPod.visible = false;
+						}
+						
+						playVideo(userID.toString(),userName);
+						
+						_userObject.userId = value.userId;
+						_userObject.userName = value.userName;
+						_userObject.provinceName = value.provinceName;
+						_userObject.emailId = value.emailId;
+						//_userObject.onAir = value.ON_AIR;
+						_userObject.userRole = value.userRole;
+						_userObject.city = value.city;
+						//_userObject.DOB = value.birthdate;
+						_userObject.ip = value.ip;
+						_userObject.inPrivateChat = value.inPrivateChat;
+						_userObject.withUserID = value.withUserID;
+					}
+					catch(e:Error)
+					{
+						AppManager.getInstance().log("error creating user");
+					}
+				}
+				else
+				{
+					nameUser.text = "";
+					cityl.text = ""
+					posLabel.text = "";
+				}
+			}
+			
+			protected function chatButton_clickHandler(event:MouseEvent):void
+			{
+				if(_userID != 0 && !isNaN(_userID))
+				{
+					_nc.call("inviteUser", null, 0, _userID);
+					dispatchEvent(new Event("privateChatEnabled",true,true));
+				}
+			}
+			
+			public function initializeVideoPod():void
+			{
+				_vid = new Video(160, 140);
+				
+				if(videoPod)
+				{
+					videoPod.addChild(_vid);
+				}
+			}
+			
+			private function playVideo(userID:String, userName:String):void{
+				try
+				{
+					_ns = new NetStream(_nc);
+					_ns.addEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					_ns.client = this;
+					_vid.attachNetStream(_ns);
+					_ns.play("user_" + userID, -1, -1);
+					AppManager.getInstance().log("starting screening video of user : "+userName+" and his publishg id is : user_"+userID);
+					_ns.receiveAudio(false);
+					title = userName;
+					//nameLabel.visible = true;
+					//_vid.visible = true;
+					videoPod.visible = true;
+					_vid.clear();
+					_vid.clear();
+					_vid.clear();
+					_vid.visible = false;
+					_vid.clear();
+					_vid.visible = true;
+					videoPod.visible = true;
+					videoPod.includeInLayout = true;
+				} catch (e:Error)
+				{
+					AppManager.getInstance().log("")
+				}
+			}
+			
+			public function stopVideo(user:String):void{
+				//AppManager.getInstance().log("stopVideo called username : "+AppManager.getInstance().userName+ " id video is : "+this.id);
+				if (user!=null&&user.length>0)
+				{
+					AppManager.getInstance().log("stopping screening video of user : "+userName);
+					_ns.close();
+					_vid.attachNetStream(null);
+					_vid.clear();
+					_vid.clear();
+					_vid.visible = false;
+					videoPod.visible = false;
+					title = "";
+				}
+				//nameLabel.visible = false;
+				//AppManager.getInstance().log("stopVideo for username : "+AppManager.getInstance().userName+ " and id : "+this.id+" asked to stop : "+user);
+			}
+			
+			private function onNetStreamStatus(e:NetStatusEvent):void{
+				
+				var dis:String = e.info.description;
+				var user:String = "";
+				if(dis)
+				{
+					var tempArray1:Array = dis.split("_");
+					var tempStr:String = tempArray1[1];
+					var temparray:Array = tempStr.split(" ");
+					user= "user_"+temparray[0];
+				}
+				var c:String = e.info.code; 
+				
+				if(c == "NetStream.Unpublish.Success")
+				{
+					
+				}
+				if(c == "NetStream.Play.PublishNotify")
+				{
+					if(Number(temparray[0]) == userID)
+					{
+						playVideo(userID.toString(),userName)	
+					}
+					
+				}
+				else if(c == "NetStream.Play.UnpublishNotify")
+				{
+					if(user && user != "")
+					{
+						stopVideo(user);
+						var tempObj:Object = new Object();
+						tempObj.user = _userName;
+					}
+						
+				}
+				else if(c == "NetStream.Play.StreamNotFound")
+				{
+					if(user && user != "")
+					{
+						stopVideo(user);
+						var tempObj3:Object = new Object();
+						tempObj3.user = _userName;
+					}
+					AppManager.getInstance().log("Not found");
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	
+	<fx:Declarations>
+		<mx:Glow id="glow" duration="100"
+				 alphaFrom="0" alphaTo="1"
+				 blurXFrom="0.0" blurXTo="30.0" 
+				 blurYFrom="0.0" blurYTo="30.0"  strength="2"
+				 color="0xCCFFCC" target="{videoPodPanel}"/>
+		
+		<mx:Glow id="unglow" duration="800"  
+				 alphaFrom="1" alphaTo="0"
+				 blurXFrom="30.0" blurXTo="0.0"
+				 blurYFrom="30.0" blurYTo="0.0"  strength="2"
+				 color="0xCCFFCC" target="{videoPodPanel}"/>
+	</fx:Declarations>
+	
+	<s:SkinnableContainer id="videoPodPanel" width="100%" height="100%" skinClass="skins.VideoPodSkin"> <!--backgroundAlpha="0.93"
+		backgroundColor="0x425159">title="{title}"-->
+		
+		<s:Image id="user" width="155" height="140" horizontalCenter="0"
+				 source="@Embed('assets/user.png')" verticalCenter="-2"/>
+		<mx:UIComponent id="videoPod" x="3" y="3">
+			
+		</mx:UIComponent>
+		<s:VGroup left="5" top="10" width="100%">
+			<s:Label id="nameUser" visible="true" color="#FFFEFE"
+					 fontFamily="Arial" fontSize="13" fontWeight="bold" text="User : "/>
+			<components:MultiLineLabel id="nameLabel" visible="true" color="#FEFCFC"
+									   fontFamily="Arial" fontSize="13" fontWeight="bold" text="{userName}"/>
+		</s:VGroup>
+		<s:VGroup left="5" top="95" width="100%">
+			<s:Label id="cityl" visible="true" height="15" color="#FDFCFC"
+					 fontFamily="Arial" fontSize="13" fontWeight="bold" text="City : "/>
+			<components:MultiLineLabel id="cityLabel" visible="true" height="15" color="#FEFEFE"
+									   fontFamily="Arial" fontSize="13" fontWeight="bold" text="{city}"/>
+		</s:VGroup>
+		<s:VGroup left="5" top="55" width="100%">
+			<s:Label id="position" visible="false" height="15"
+					 color="#FFFEFE" fontFamily="Arial" fontSize="13" fontWeight="bold"
+					 text="Position : "/>
+			<components:MultiLineLabel id="posLabel" visible="false" width="31" height="15"
+									   color="#FEFCFC" fontFamily="Arial" fontSize="13" fontWeight="bold" text="{pos.toString()}"/>
+		</s:VGroup>
+		<s:Button id="userOptionBtn" right="3" bottom="3" height="23" width="23" skinClass="skins.AdminActionButtonSkin" enabled="false" click="userOptionBtn_clickHandler(event)" buttonMode="true"/>
+		<s:Button id="chatButton" right="35" bottom="3" height="23" width="23" visible="false" skinClass="skins.ChatSkin" enabled="false" click="chatButton_clickHandler(event)"/>
+	</s:SkinnableContainer>
+</s:Group>

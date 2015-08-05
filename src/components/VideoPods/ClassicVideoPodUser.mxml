@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:Group xmlns:fx="http://ns.adobe.com/mxml/2009" 
+		 xmlns:s="library://ns.adobe.com/flex/spark" 
+		 xmlns:mx="library://ns.adobe.com/flex/mx" width="160" height="140" xmlns:components="components.*" xmlns:VideoPods="components.VideoPods.*">
+	
+	
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<fx:Metadata>
+		[Event(name="publishStart", type="flash.events.Event")]
+		[Event(name="publishStop", type="com.encast.WowzaCustomEvent")]
+		[Event(name="streamStop", type="com.encast.WowzaCustomEvent")]
+	</fx:Metadata>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.encast.AppManager;
+			import com.encast.NetConnectionManager;
+			
+			
+			private var _vid:Video;
+			private var _nc:NetConnectionManager;
+			private var _ns:NetStream;
+			private var _userID:Number;
+			private var _withUserID:Number;
+			private var _userName:String;
+			private var _inited:Boolean = false;
+			private var _playingUserName:String = "";
+			
+			private var _playingVideo:Boolean = false;
+			private var _publishingVideo:Boolean = false;
+			
+			[Bindable]
+			public var title:String;
+			
+			public function initializeVideoPod(nc:NetConnectionManager):void{
+				_nc = nc;
+				_nc.addEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+				_userID = AppManager.getInstance().userID;
+				_userName = AppManager.getInstance().userName;
+				_vid = new Video(145, 145);
+				videoPod.addChild(_vid);
+				playVideo();
+			}
+			
+			private function onNetStatusNC(e:NetStatusEvent):void{
+				
+			}
+			
+			private function onNetStreamStatus(e:NetStatusEvent):void{
+				
+				var dis:String = e.info.description;
+				var user:String = "";
+				var c:String = e.info.code; 
+				
+				if(c == "NetStream.Play.Start")
+				{
+					dis = "moderator1 is now published";
+					
+				}
+				
+				if(c == "NetStream.Play.UnpublishNotify")
+				{
+					stopVideo()
+				}				
+				else if(c == "NetStream.Play.StreamNotFound")
+				{
+					
+				}
+				else if( c == "NetStream.Play.PublishNotify")
+				{
+					playVideo();
+				}
+			}
+			
+			
+			public function stopStream():void{
+				stopVideo();
+			}
+			
+			public function muteAudio():void{
+				_ns.receiveAudio(false);
+			}
+			
+			public function unMuteAudio():void{
+				_ns.receiveAudio(true);
+			}
+			
+			private function playVideo():void{
+				if(_nc)
+				{
+					_ns = new NetStream(_nc);
+					_ns.client = this;
+					_ns.addEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					_playingVideo = true;
+					_vid.attachNetStream(_ns);				
+					_ns.play("private_user_", -1, -1);
+					title = "Private User";
+					nameLabel.visible = true;
+					_vid.visible = true;
+					_playingUserName = "Private User";
+					videoPod.visible = true;
+				}
+			}
+			
+			public function stopVideo():void{
+				_playingVideo = false;
+				if(_ns)
+				{
+					_ns.close();
+				}
+				if(_vid)
+				{
+					_vid.attachNetStream(null);
+					_vid.clear();
+					_vid.visible = false;
+				}
+				title = "";
+				nameLabel.visible = false;
+				videoPod.visible = false;
+				_playingUserName = "";
+			}
+			
+			public function setUserName(userName:String):void{
+				title = userName;
+			}
+			
+			
+			public function setVideoPodStartControl(value:Boolean):void{
+				
+			}
+			
+			public function get userID():Number
+			{
+				return _userID;
+			}
+			
+			public function get withUserID():Number
+			{
+				return _withUserID;
+			}
+			
+			public function set withUserID(value:Number):void
+			{
+				_withUserID = value;
+			}
+			
+			public function get userName():String
+			{
+				return _userName;
+			}
+			
+			public function get playingUserName():String
+			{
+				return _playingUserName;
+			}
+			
+			
+			public function destroy():void
+			{
+				//stopPublishingVideo();
+				stopVideo();
+				if(_ns)
+				{
+					_ns.removeEventListener(NetStatusEvent.NET_STATUS, onNetStreamStatus);
+					_ns = null;
+				}
+				
+				if(_nc)
+				{
+					_nc.removeEventListener(NetStatusEvent.NET_STATUS , onNetStatusNC);
+					_nc = null;
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:SkinnableContainer id="videoPodPanel" width="100%" height="100%" skinClass="skins.VideoPodSkin"> <!--backgroundAlpha="0.93"
+		backgroundColor="0x425159">title="{title}"-->
+		<mx:UIComponent id="videoPod" x="3" y="3">
+			
+		</mx:UIComponent>
+		<components:MultiLineLabel id="nameLabel" visible="false" left="3" bottom="3" color="#02001A"
+								   fontFamily="Arial" fontSize="17" fontWeight="bold" text="{title}"/>
+	</s:SkinnableContainer>
+</s:Group>
